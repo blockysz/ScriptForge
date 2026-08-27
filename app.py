@@ -782,7 +782,7 @@ HTML_TEMPLATE = r"""
 
         <div class="d-flex align-items-center gap-2">
             <button class="btn btn-sm btn-outline-light fw-bold" onclick="openAuthModal()" id="authHeaderBtn">
-                <i class="fa-solid fa-user me-1"></i> Account
+                <i class="fa-solid fa-user me-1"></i> Login / Sign Up
             </button>
 
             <button class="btn btn-sm btn-outline-light fw-bold" onclick="openExecutorModal()" title="Get Executor Client Script">
@@ -1065,7 +1065,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             if (loggedInUser) {
                 btn.innerHTML = `<i class="fa-solid fa-user-check me-1"></i> ${escapeHtml(loggedInUser)}`;
             } else {
-                btn.innerHTML = `<i class="fa-solid fa-user me-1"></i> Account`;
+                btn.innerHTML = `<i class="fa-solid fa-user me-1"></i> Login / Sign Up`;
             }
         }
 
@@ -1104,7 +1104,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
         async function submitLogin() {
             const user = document.getElementById("loginUsername").value.trim();
-            const pass = document.getElementById("loginPassword").value.trim();
+            const pass = document.getElementById("loginPassword").value;
             if (!user || !pass) {
                 showToast("Please enter username and password", "fa-solid fa-circle-exclamation text-secondary");
                 return;
@@ -1144,7 +1144,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
         async function submitRegister() {
             const user = document.getElementById("regUsername").value.trim();
-            const pass = document.getElementById("regPassword").value.trim();
+            const pass = document.getElementById("regPassword").value;
             if (!user || !pass) {
                 showToast("Please choose a username and password", "fa-solid fa-circle-exclamation text-secondary");
                 return;
@@ -1835,9 +1835,9 @@ def index():
 @app.route("/api/auth/register", methods=["POST"])
 def auth_register():
     data = request.json or {}
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-    session_key = data.get("session_key", "")
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    session_key = data.get("session_key") or ""
 
     if not username or len(username) < 3:
         return jsonify({"error": "Username must be at least 3 characters"}), 400
@@ -1876,8 +1876,8 @@ def auth_register():
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
     data = request.json or {}
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
 
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
@@ -1887,11 +1887,14 @@ def auth_login():
     user_data = accounts.get(user_key)
 
     if not user_data:
+        print(f"[AUTH] Login failed: user '{user_key}' not found in accounts.")
         return jsonify({"error": "Invalid username or password"}), 401
 
     if not verify_password(password, user_data["password_hash"], user_data["salt"]):
+        print(f"[AUTH] Login failed: invalid password for user '{user_key}'.")
         return jsonify({"error": "Invalid username or password"}), 401
 
+    print(f"[AUTH] Login success for user '{user_key}'.")
     return jsonify({
         "status": "ok",
         "user": {
@@ -1904,7 +1907,7 @@ def auth_login():
 @app.route("/api/auth/sync_chats", methods=["POST"])
 def sync_chats_cloud():
     data = request.json or {}
-    username = data.get("username", "").strip()
+    username = (data.get("username") or "").strip()
     chats = data.get("chats", [])
 
     if not username:
