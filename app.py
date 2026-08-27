@@ -39,7 +39,6 @@ def load_accounts():
                 val = res.get("result")
                 if val:
                     accounts_in_memory = json.loads(val)
-                    print(f"[ACCOUNTS] Loaded {len(accounts_in_memory)} account(s) from Vercel KV / Upstash Redis")
                     return accounts_in_memory
         except Exception as e:
             print(f"[ACCOUNTS] Error reading Vercel KV: {e}")
@@ -54,7 +53,6 @@ def load_accounts():
             with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 accounts_in_memory = data
-                print(f"[ACCOUNTS] Loaded {len(data)} account(s) from local file: {ACCOUNTS_FILE}")
                 return data
         except Exception as e:
             print(f"[ACCOUNTS] Error loading accounts file: {e}")
@@ -66,7 +64,6 @@ def save_accounts(accounts):
     global accounts_in_memory
     accounts_in_memory = accounts
 
-    # 1. Try Vercel KV / Upstash Redis if configured
     if KV_URL and KV_TOKEN:
         try:
             url = f"{KV_URL.rstrip('/')}/set/scriptforge_accounts"
@@ -80,11 +77,10 @@ def save_accounts(accounts):
                 }
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
-                print(f"[ACCOUNTS] Saved {len(accounts)} account(s) to Vercel KV / Upstash Redis!")
+                print(f"[ACCOUNTS] Saved accounts to Vercel KV!")
         except Exception as e:
             print(f"[ACCOUNTS] Error saving to Vercel KV: {e}")
 
-    # 2. Try saving to local JSON disk
     try:
         with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
             json.dump(accounts, f, indent=2)
@@ -93,9 +89,8 @@ def save_accounts(accounts):
                 os.fsync(f.fileno())
             except Exception:
                 pass
-        print(f"[ACCOUNTS] Saved {len(accounts)} account(s) to local file: {ACCOUNTS_FILE}")
     except OSError as e:
-        print(f"[ACCOUNTS] Running on Vercel ephemeral read-only filesystem: {e}")
+        print(f"[ACCOUNTS] Read-only filesystem warning: {e}")
     except Exception as e:
         print(f"[ACCOUNTS] Error saving local accounts file: {e}")
 
@@ -103,10 +98,8 @@ def save_accounts(accounts):
 sessions_data = {}
 game_name_cache = {}
 
-DEFAULT_API_KEY = "ollama"
-gemini_api_key = os.getenv("GEMINI_API_KEY", DEFAULT_API_KEY)
-current_api_key = DEFAULT_API_KEY
-current_selected_model = "ollama/qwen2.5-coder:latest"
+gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
 
 @app.errorhandler(Exception)
 def handle_exception(e):
@@ -185,12 +178,10 @@ def extract_luau_code(text):
     cleaned = "\n".join(code_lines).strip()
     return cleaned
 
-def call_openai_compatible(api_url, api_key, model_names, system_instruction, user_prompt, history=[], game_ctx={}):
-    """Call OpenAI compatible endpoints (OpenRouter / Ollama) with multi-model fallback."""
-    if isinstance(model_names, str):
-        models_to_try = [model_names]
-    else:
-        models_to_try = list(model_names)
+def call_openai_compatible(api_url, api_key, model_name, system_instruction, user_prompt, history=[], game_ctx={}):
+    """Call OpenRouter API endpoints."""
+    if not api_key:
+        return None, "OpenRouter API Key is missing. Please add your key in Settings."
 
     messages = [{"role": "system", "content": f"{system_instruction}\n\n[LIVE ROBLOX GAME CONTEXT]\n{json.dumps(game_ctx, indent=2)}"}]
     for item in history:
@@ -201,36 +192,33 @@ def call_openai_compatible(api_url, api_key, model_names, system_instruction, us
 
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "Authorization": f"Bearer {api_key}",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
-    if api_key and api_key != "ollama":
-        headers["Authorization"] = f"Bearer {api_key}"
 
-    last_err = None
-    for model_name in models_to_try:
-        payload = {
-            "model": model_name,
-            "messages": messages,
-            "temperature": 0.7
-        }
-        req = urllib.request.Request(api_url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                content = data["choices"][0]["message"]["content"]
-                print(f"[SUCCESS] Model used: {model_name}")
-                return content, None
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8")
-            last_err = f"HTTP {e.code}: {err_body}"
-            print(f"[WARNING] Model {model_name} failed ({e.code}), trying next model...")
-        except Exception as e:
-            last_err = str(e)
+    payload = {
+        "model": model_name,
+        "messages": messages,
+        "temperature": 0.7
+    }
 
-    return None, last_err
+    req = urllib.request.Request(api_url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            content = data["choices"][0]["message"]["content"]
+            return content, None
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8")
+        return None, f"HTTP {e.code}: {err_body}"
+    except Exception as e:
+        return None, str(e)
 
-def call_gemini_api(api_key, system_instruction, user_prompt, history=[], target_model="gemini-3.6-flash", game_ctx={}):
-    """Call Google Gemini REST API with correct role mapping."""
+def call_gemini_api(api_key, system_instruction, user_prompt, history=[], target_model="gemini-2.5-flash", game_ctx={}):
+    """Call Google Gemini REST API."""
+    if not api_key:
+        return None, "Gemini API Key is missing. Please add your key in Settings."
+
     contents = []
     full_system = f"{system_instruction}\n\n[LIVE ROBLOX GAME CONTEXT]\n{json.dumps(game_ctx, indent=2)}"
     
@@ -255,46 +243,35 @@ def call_gemini_api(api_key, system_instruction, user_prompt, history=[], target
         }
     }
     
-    models_to_try = [target_model, "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.7-flash"]
-    seen = set()
-    models_to_try = [x for x in models_to_try if not (x in seen or seen.add(x))]
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            res_data = json.loads(resp.read().decode("utf-8"))
+            candidates = res_data.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                text = "".join([p["text"] for p in parts if "text" in p and not p.get("thought", False)])
+                if not text and parts:
+                    text = parts[-1].get("text", "")
+                if text:
+                    return text, None
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8")
+        return None, f"HTTP {e.code}: {err_body}"
+    except Exception as e:
+        return None, str(e)
 
-    last_err = None
-    for model in models_to_try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                res_data = json.loads(resp.read().decode("utf-8"))
-                candidates = res_data.get("candidates", [])
-                if candidates:
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    text = ""
-                    for p in parts:
-                        if "text" in p and not p.get("thought", False):
-                            text += p["text"]
-                    if not text and parts:
-                        text = parts[-1].get("text", "")
-                    if text:
-                        print(f"[SUCCESS] Used Gemini model: {model}")
-                        return text, None
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8")
-            last_err = f"HTTP {e.code}: {err_body}"
-            print(f"[WARNING] Model {model} failed ({e.code}): {err_body[:100]}")
-        except Exception as e:
-            last_err = str(e)
+    return None, "No candidate response returned from Gemini API"
 
-    return None, last_err
-
-def generate_ai_response(user_prompt, selected_model, req_key, history=[], game_ctx={}, openrouter_key="", ollama_url=""):
+def generate_ai_response(user_prompt, selected_model, req_key, history=[], game_ctx={}, openrouter_key=""):
     """UNIFIED AI generation engine used for BOTH chat messages and auto-fixes."""
     system_instruction = """
     You are ScriptForge's expert Luau Scripting Assistant connected directly to a live Roblox game player session.
@@ -308,18 +285,14 @@ def generate_ai_response(user_prompt, selected_model, req_key, history=[], game_
 
     print(f"[AI PIPELINE] Generating response using model: {selected_model}")
 
-    if selected_model.startswith("ollama/") or "qwen" in selected_model:
-        model_name = selected_model.replace("ollama/", "")
-        endpoint = (ollama_url or "http://localhost:11434").rstrip('/') + "/v1/chat/completions"
-        return call_openai_compatible(endpoint, "", model_name, system_instruction, user_prompt, history, game_ctx)
-    elif selected_model.startswith("openrouter/"):
+    if selected_model.startswith("openrouter/"):
         m_name = selected_model.replace("openrouter/", "")
-        openrouter_models = [m_name, "dots-studio/dots-3-note-preview:free", "cohere/north-mini-code:free", "google/gemma-4-31b-it:free"]
-        key = openrouter_key or req_key
-        return call_openai_compatible("https://openrouter.ai/api/v1/chat/completions", key, openrouter_models, system_instruction, user_prompt, history, game_ctx)
+        key = openrouter_key or os.getenv("OPENROUTER_API_KEY", "")
+        return call_openai_compatible("https://openrouter.ai/api/v1/chat/completions", key, m_name, system_instruction, user_prompt, history, game_ctx)
     else:
         g_model = selected_model.replace("gemini/", "")
-        return call_gemini_api(req_key, system_instruction, user_prompt, history, target_model=g_model, game_ctx=game_ctx)
+        key = req_key or os.getenv("GEMINI_API_KEY", "")
+        return call_gemini_api(key, system_instruction, user_prompt, history, target_model=g_model, game_ctx=game_ctx)
 
 HTML_TEMPLATE = r"""
 <!DOCTYPE html>
@@ -329,7 +302,6 @@ HTML_TEMPLATE = r"""
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ScriptForge | Live Roblox AI Studio</title>
     
-    <!-- Custom SVG Favicon Icon for browser tab -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23121212'/><path d='M25 65 L75 65 L70 50 L30 50 Z M40 50 L40 35 L60 35 L60 50 Z' fill='%23ffffff'/><polygon points='52 20 38 48 50 48 44 75 62 42 50 42' fill='%23ffffff'/></svg>">
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -388,7 +360,7 @@ HTML_TEMPLATE = r"""
             border-radius: 30px;
             font-size: 0.88rem;
             font-weight: 600;
-            z-index: 9999;
+            z-index: 99999;
             display: flex;
             align-items: center;
             gap: 10px;
@@ -663,11 +635,13 @@ HTML_TEMPLATE = r"""
             max-width: 100% !important;
             padding: 0 24px 16px 24px;
             box-sizing: border-box;
-            overflow: hidden;
+            overflow: visible !important;
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
             gap: 10px;
+            position: relative;
+            z-index: 10;
         }
 
         .prompt-pills {
@@ -752,12 +726,15 @@ HTML_TEMPLATE = r"""
             align-items: center;
             justify-content: space-between;
             gap: 12px;
+            position: relative;
+            z-index: 1000;
         }
 
         .toggle-group {
             display: flex;
             align-items: center;
             gap: 12px;
+            position: relative;
         }
 
         .custom-toggle-pill {
@@ -799,6 +776,18 @@ HTML_TEMPLATE = r"""
         .custom-toggle-pill.active .toggle-knob {
             background-color: #ffffff;
             box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+        }
+
+        /* Upward Dropdown Menu Floating Overlap Fix */
+        .dropup .dropdown-menu {
+            z-index: 99999 !important;
+            position: absolute !important;
+            bottom: 100% !important;
+            top: auto !important;
+            margin-bottom: 8px !important;
+            max-height: 380px;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
         }
 
         .code-container {
@@ -924,22 +913,13 @@ HTML_TEMPLATE = r"""
                             <span><i class="fa-solid fa-wrench me-1"></i> Auto-Fix Errors</span>
                         </div>
 
-                        <!-- Upward Model Selector Dropdown matching exact toggle pill design -->
+                        <!-- Upward Model Selector Dropdown with z-index overlap fix -->
                         <div class="dropup d-inline-block" id="modelDropup">
-                            <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;">
-                                <i class="fa-solid fa-brain me-1"></i> <span id="bottomModelBadge">qwen2.5-coder</span>
+                            <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;" onclick="renderModelDropupList()">
+                                <i class="fa-solid fa-brain me-1"></i> <span id="bottomModelBadge">gemini-2.5-flash</span>
                             </div>
-                            <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary" style="font-size: 0.84rem; min-width: 280px; margin-bottom: 8px;">
-                                <li><h6 class="dropdown-header text-secondary font-monospace"><i class="fa-solid fa-microchip me-1"></i> LOCAL MODELS</h6></li>
-                                <li><a class="dropdown-item py-2" href="#" onclick="selectModel('ollama/qwen2.5-coder:latest')">🦙 Ollama: qwen2.5-coder (Free Default)</a></li>
-                                <li><hr class="dropdown-divider border-secondary"></li>
-                                <li><h6 class="dropdown-header text-secondary font-monospace"><i class="fa-solid fa-globe me-1"></i> OPENROUTER FREE</h6></li>
-                                <li><a class="dropdown-item py-2" href="#" onclick="selectModel('openrouter/cohere/north-mini-code:free')">🌐 Cohere North Code Free</a></li>
-                                <li><a class="dropdown-item py-2" href="#" onclick="selectModel('openrouter/google/gemma-4-31b-it:free')">🌐 Google Gemma 4 Free</a></li>
-                                <li><hr class="dropdown-divider border-secondary"></li>
-                                <li><h6 class="dropdown-header text-secondary font-monospace"><i class="fa-solid fa-bolt me-1"></i> GEMINI AI</h6></li>
-                                <li><a class="dropdown-item py-2" href="#" onclick="selectModel('gemini/gemini-3.6-flash')">✨ Gemini 3.6 Flash</a></li>
-                                <li><a class="dropdown-item py-2" href="#" onclick="selectModel('gemini/gemini-3.5-flash')">✨ Gemini 3.5 Flash</a></li>
+                            <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary" id="modelDropupList" style="font-size: 0.84rem; min-width: 320px;">
+                                <!-- Dynamic Rendered Items -->
                             </ul>
                         </div>
                     </div>
@@ -961,7 +941,6 @@ HTML_TEMPLATE = r"""
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <!-- Logged Out View -->
                     <div id="authLoggedOutView">
                         <ul class="nav nav-pills nav-justified mb-3" id="authTabs" role="tablist">
                             <li class="nav-item">
@@ -972,7 +951,6 @@ HTML_TEMPLATE = r"""
                             </li>
                         </ul>
 
-                        <!-- Login Form -->
                         <div id="loginForm">
                             <div class="mb-3">
                                 <label class="form-label text-secondary" style="font-size: 0.85rem;">Username</label>
@@ -985,7 +963,6 @@ HTML_TEMPLATE = r"""
                             <button class="btn btn-light w-100 fw-bold text-dark" onclick="submitLogin()"><i class="fa-solid fa-right-to-bracket me-1"></i> Log In</button>
                         </div>
 
-                        <!-- Register Form -->
                         <div id="registerForm" style="display: none;">
                             <div class="mb-3">
                                 <label class="form-label text-secondary" style="font-size: 0.85rem;">Username</label>
@@ -999,7 +976,6 @@ HTML_TEMPLATE = r"""
                         </div>
                     </div>
 
-                    <!-- Logged In View -->
                     <div id="authLoggedInView" style="display: none;">
                         <div class="text-center py-3">
                             <div class="avatar avatar-user mx-auto mb-2" style="width: 48px; height: 48px; font-size: 1.4rem;">
@@ -1022,6 +998,30 @@ HTML_TEMPLATE = r"""
 
                         <button class="btn btn-outline-danger w-100 fw-bold" onclick="submitLogout()"><i class="fa-solid fa-right-from-bracket me-1"></i> Log Out</button>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Key Missing Warning Modal -->
+    <div class="modal fade" id="apiKeyWarningModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark text-light border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-warning"><i class="fa-solid fa-triangle-exclamation me-2"></i>API Key Required</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-light mb-3" id="warningModalText" style="font-size: 0.92rem;">
+                        The API key for this service is not connected yet. Please add your key in Settings.
+                    </p>
+                    <div class="p-3 bg-black rounded border border-secondary text-secondary" style="font-size: 0.82rem;">
+                        <i class="fa-solid fa-circle-info text-light me-1"></i> Add your Gemini or OpenRouter API key in Settings to unlock this AI model.
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-light fw-bold px-4 text-dark" onclick="openSettingsModalFromWarning()"><i class="fa-solid fa-gear me-1"></i> Open Settings</button>
+                    <button type="button" class="btn btn-outline-secondary text-light px-3" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
@@ -1068,7 +1068,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         </div>
     </div>
 
-    <!-- Redesigned Vertical Settings Page Modal -->
+    <!-- Vertical Settings Page Modal with Get API Key Links & Expanded Models -->
     <div class="modal fade" id="settingsModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content bg-dark text-light border-secondary">
@@ -1080,35 +1080,33 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     <div class="d-flex flex-column gap-4">
                         <!-- Line 1: Gemini API Key -->
                         <div class="p-3 bg-black rounded border border-secondary">
-                            <label class="form-label font-weight-bold text-light mb-1 d-flex justify-content-between">
-                                <span><i class="fa-solid fa-sparkles text-light me-2"></i> Google Gemini API Key</span>
-                                <span class="badge bg-secondary font-monospace">Gemini 3.6 / 3.5</span>
-                            </label>
-                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Required for Google Gemini models. Get key from Google AI Studio.</p>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label font-weight-bold text-light mb-0">
+                                    <i class="fa-solid fa-sparkles text-light me-2"></i> Google Gemini API Key
+                                </label>
+                                <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn btn-sm btn-outline-light font-monospace py-0 px-2" style="font-size: 0.78rem;">
+                                    <i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Get Gemini Key
+                                </a>
+                            </div>
+                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Unlocks Gemini 2.5 Flash, Gemini 2.5 Pro, and 1.5 Flash.</p>
                             <input type="password" id="geminiApiKeyInput" class="form-control bg-dark text-light border-secondary font-monospace" placeholder="AIzaSy...">
                         </div>
 
                         <!-- Line 2: OpenRouter API Key -->
                         <div class="p-3 bg-black rounded border border-secondary">
-                            <label class="form-label font-weight-bold text-light mb-1 d-flex justify-content-between">
-                                <span><i class="fa-solid fa-globe text-light me-2"></i> OpenRouter API Key</span>
-                                <span class="badge bg-secondary font-monospace">OpenRouter Free & Paid</span>
-                            </label>
-                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Required for OpenRouter hosted models (Cohere, Gemma 4, Claude, GPT-4o).</p>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label font-weight-bold text-light mb-0">
+                                    <i class="fa-solid fa-globe text-light me-2"></i> OpenRouter API Key
+                                </label>
+                                <a href="https://openrouter.ai/keys" target="_blank" class="btn btn-sm btn-outline-light font-monospace py-0 px-2" style="font-size: 0.78rem;">
+                                    <i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Get OpenRouter Key
+                                </a>
+                            </div>
+                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Unlocks Claude 3.5 Sonnet, GPT-4o, DeepSeek Coder, Qwen 2.5 Coder 32B, Gemma 4, etc.</p>
                             <input type="password" id="openrouterApiKeyInput" class="form-control bg-dark text-light border-secondary font-monospace" placeholder="sk-or-v1-...">
                         </div>
 
-                        <!-- Line 3: Local Ollama Endpoint -->
-                        <div class="p-3 bg-black rounded border border-secondary">
-                            <label class="form-label font-weight-bold text-light mb-1 d-flex justify-content-between">
-                                <span><i class="fa-solid fa-server text-light me-2"></i> Ollama Server Endpoint</span>
-                                <span class="badge bg-secondary font-monospace">Local Offline</span>
-                            </label>
-                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Local AI server host URL for qwen2.5-coder, deepseek-coder, etc.</p>
-                            <input type="text" id="ollamaEndpointInput" class="form-control bg-dark text-light border-secondary font-monospace" value="http://localhost:11434">
-                        </div>
-
-                        <!-- Line 4: Sync & Storage Scope -->
+                        <!-- Line 3: Sync & Storage Scope -->
                         <div class="p-3 bg-black rounded border border-secondary">
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
@@ -1151,10 +1149,9 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             return key;
         }
 
-        let geminiApiKey = localStorage.getItem("GEMINI_API_KEY") || "ollama";
+        let geminiApiKey = localStorage.getItem("GEMINI_API_KEY") || "";
         let openrouterApiKey = localStorage.getItem("OPENROUTER_API_KEY") || "";
-        let ollamaEndpoint = localStorage.getItem("OLLAMA_ENDPOINT") || "http://localhost:11434";
-        let selectedModel = localStorage.getItem("ANTIGRAVITY_SELECTED_MODEL") || "ollama/qwen2.5-coder:latest";
+        let selectedModel = localStorage.getItem("ANTIGRAVITY_SELECTED_MODEL") || "gemini/gemini-2.5-flash";
         let autoExecute = localStorage.getItem("ANTIGRAVITY_AUTO_EXECUTE") === "true";
         let autoFix = localStorage.getItem("ANTIGRAVITY_AUTO_FIX") !== "false";
         let currentTheme = localStorage.getItem("ANTIGRAVITY_THEME") || "dark";
@@ -1164,6 +1161,27 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         let editingChatId = null;
         let activePollingScriptIds = {};
 
+        // Available AI Models Configuration
+        const ALL_MODELS = [
+            // Gemini Models
+            { id: "gemini/gemini-2.5-flash", name: "✨ Gemini 2.5 Flash", provider: "gemini" },
+            { id: "gemini/gemini-2.5-pro", name: "✨ Gemini 2.5 Pro", provider: "gemini" },
+            { id: "gemini/gemini-1.5-flash", name: "✨ Gemini 1.5 Flash", provider: "gemini" },
+
+            // Anthropic Claude
+            { id: "openrouter/anthropic/claude-3.5-sonnet", name: "🟠 Claude 3.5 Sonnet", provider: "openrouter" },
+            { id: "openrouter/anthropic/claude-3-haiku", name: "🟠 Claude 3 Haiku", provider: "openrouter" },
+
+            // OpenAI GPT
+            { id: "openrouter/openai/gpt-4o", name: "🟢 OpenAI GPT-4o", provider: "openrouter" },
+            { id: "openrouter/openai/gpt-4o-mini", name: "🟢 OpenAI GPT-4o Mini", provider: "openrouter" },
+
+            // DeepSeek & Qwen & Gemma
+            { id: "openrouter/deepseek/deepseek-coder", name: "🔵 DeepSeek Coder V2", provider: "openrouter" },
+            { id: "openrouter/qwen/qwen-2.5-coder-32b-instruct", name: "🌐 Qwen 2.5 Coder 32B", provider: "openrouter" },
+            { id: "openrouter/google/gemma-4-31b-it:free", name: "🌐 Google Gemma 4 Free", provider: "openrouter" }
+        ];
+
         document.documentElement.setAttribute("data-bs-theme", currentTheme);
         updateThemeIcon();
         updateAuthHeaderBtn();
@@ -1171,21 +1189,76 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         updateTogglePillsUI();
 
         function updateModelDisplayBadge() {
-            const shortName = selectedModel.split('/')[1] || selectedModel;
+            const shortName = selectedModel.split('/').pop();
             document.getElementById("bottomModelBadge").innerText = shortName;
         }
 
-        function selectModel(modelName) {
-            selectedModel = modelName;
+        function isModelConnected(model) {
+            if (model.provider === "gemini") return !!geminiApiKey;
+            if (model.provider === "openrouter") return !!openrouterApiKey;
+            return false;
+        }
+
+        function renderModelDropupList() {
+            const listEl = document.getElementById("modelDropupList");
+            listEl.innerHTML = "";
+
+            const connectedModels = ALL_MODELS.filter(m => isModelConnected(m));
+            const unconnectedModels = ALL_MODELS.filter(m => !isModelConnected(m));
+
+            if (connectedModels.length > 0) {
+                const header1 = document.createElement("li");
+                header1.innerHTML = `<h6 class="dropdown-header text-success font-monospace"><i class="fa-solid fa-circle-check me-1"></i> CONNECTED SERVICES</h6>`;
+                listEl.appendChild(header1);
+
+                connectedModels.forEach(m => {
+                    const li = document.createElement("li");
+                    li.innerHTML = `<a class="dropdown-item py-2 d-flex justify-content-between align-items-center" href="#" onclick="selectModel('${m.id}')"><span>${escapeHtml(m.name)}</span> <i class="fa-solid fa-check text-success"></i></a>`;
+                    listEl.appendChild(li);
+                });
+            }
+
+            if (unconnectedModels.length > 0) {
+                if (connectedModels.length > 0) {
+                    const div = document.createElement("li");
+                    div.innerHTML = `<hr class="dropdown-divider border-secondary">`;
+                    listEl.appendChild(div);
+                }
+
+                const header2 = document.createElement("li");
+                header2.innerHTML = `<h6 class="dropdown-header text-warning font-monospace"><i class="fa-solid fa-triangle-exclamation me-1"></i> REQUIRES API KEY (NOT CONNECTED)</h6>`;
+                listEl.appendChild(header2);
+
+                unconnectedModels.forEach(m => {
+                    const li = document.createElement("li");
+                    li.innerHTML = `<a class="dropdown-item py-2 d-flex justify-content-between align-items-center text-secondary" href="#" onclick="clickUnconnectedModel('${m.id}', '${m.provider}', '${escapeHtml(m.name)}')"><span><i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>${escapeHtml(m.name)}</span> <span class="badge bg-dark border border-warning text-warning" style="font-size:0.7rem;">Needs Key</span></a>`;
+                    listEl.appendChild(li);
+                });
+            }
+        }
+
+        function selectModel(modelId) {
+            selectedModel = modelId;
             localStorage.setItem("ANTIGRAVITY_SELECTED_MODEL", selectedModel);
             updateModelDisplayBadge();
-            showToast("Selected Model: " + (selectedModel.split('/')[1] || selectedModel), "fa-solid fa-brain text-light");
+            showToast("Selected Model: " + selectedModel.split('/').pop(), "fa-solid fa-brain text-light");
+        }
+
+        function clickUnconnectedModel(modelId, provider, modelName) {
+            const providerName = provider === "gemini" ? "Google Gemini" : "OpenRouter";
+            document.getElementById("warningModalText").innerText = `The API key for ${providerName} is not connected yet. Please add your key in Settings to use ${modelName}.`;
+            const modal = new bootstrap.Modal(document.getElementById("apiKeyWarningModal"));
+            modal.show();
+        }
+
+        function openSettingsModalFromWarning() {
+            bootstrap.Modal.getInstance(document.getElementById("apiKeyWarningModal")).hide();
+            openSettingsModal();
         }
 
         function openSettingsModal() {
             document.getElementById("geminiApiKeyInput").value = geminiApiKey;
             document.getElementById("openrouterApiKeyInput").value = openrouterApiKey;
-            document.getElementById("ollamaEndpointInput").value = ollamaEndpoint;
 
             const scopeText = document.getElementById("settingsSyncScopeText");
             const scopeBadge = document.getElementById("settingsScopeBadge");
@@ -1207,24 +1280,22 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         function saveSettings() {
             geminiApiKey = document.getElementById("geminiApiKeyInput").value.trim();
             openrouterApiKey = document.getElementById("openrouterApiKeyInput").value.trim();
-            ollamaEndpoint = document.getElementById("ollamaEndpointInput").value.trim() || "http://localhost:11434";
 
             localStorage.setItem("GEMINI_API_KEY", geminiApiKey);
             localStorage.setItem("OPENROUTER_API_KEY", openrouterApiKey);
-            localStorage.setItem("OLLAMA_ENDPOINT", ollamaEndpoint);
 
             fetch('/api/set_key', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     api_key: geminiApiKey,
-                    openrouter_key: openrouterApiKey,
-                    ollama_url: ollamaEndpoint
+                    openrouter_key: openrouterApiKey
                 })
             });
 
             bootstrap.Modal.getInstance(document.getElementById('settingsModal')).hide();
             showToast("All Settings Saved!", "fa-solid fa-floppy-disk text-light");
+            renderModelDropupList();
         }
 
         function updateAuthHeaderBtn() {
@@ -1403,7 +1474,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             element.style.height = Math.min(element.scrollHeight, 120) + "px";
         }
 
-        // Generate Formatted Multi-Line GitHub loadstring for current domain + unique Session Key
         function getFormattedExecutorScript() {
             const origin = window.location.origin;
             const key = getSessionKey();
@@ -1735,7 +1805,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                         wasConnected = true;
                         showToast(`🎮 Connected to ${data.player_name || "Roblox"}!`, "fa-solid fa-gamepad text-light");
                         
-                        // Auto-close executor modal if open when connected
                         const modalEl = document.getElementById("executorModal");
                         if (modalEl && modalEl.classList.contains("show")) {
                             const modalInstance = bootstrap.Modal.getInstance(modalEl);
@@ -1778,6 +1847,12 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             const prompt = input.value.trim();
             if (!prompt) return;
 
+            const targetModelObj = ALL_MODELS.find(m => m.id === selectedModel);
+            if (targetModelObj && !isModelConnected(targetModelObj)) {
+                clickUnconnectedModel(targetModelObj.id, targetModelObj.provider, targetModelObj.name);
+                return;
+            }
+
             const chat = chats.find(c => c.id === activeChatId);
             if (!chat) return;
 
@@ -1793,7 +1868,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             input.value = '';
             input.style.height = "24px";
 
-            // ChatGPT-Style AI Auto-Titling for new chats
             if (isFirstMessage) {
                 fetch('/api/generate_title', {
                     method: 'POST',
@@ -1817,7 +1891,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 <div class="message-content">
                     <div class="progress-box">
                         <i class="fa-solid fa-spinner fa-spin me-2"></i>
-                        <span>Forging code with ${escapeHtml(selectedModel.split('/')[1] || selectedModel)}...</span>
+                        <span>Forging code with ${escapeHtml(selectedModel.split('/').pop())}...</span>
                     </div>
                 </div>
             `;
@@ -1835,7 +1909,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                         prompt: prompt,
                         api_key: geminiApiKey,
                         openrouter_key: openrouterApiKey,
-                        ollama_url: ollamaEndpoint,
                         model: selectedModel,
                         auto_execute: autoExecute,
                         auto_fix: autoFix,
@@ -1881,7 +1954,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             }
         }
 
-        // Live Polling of Script Trajectory Logs
         function startScriptVerificationPolling(chatId, messageIdx, scriptId) {
             if (activePollingScriptIds[scriptId]) return;
             activePollingScriptIds[scriptId] = true;
@@ -1968,6 +2040,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
 
+        renderModelDropupList();
         updateGameFilterDropdown();
         renderChatList();
         renderActiveChat();
@@ -2036,14 +2109,11 @@ def auth_login():
     user_data = accounts.get(user_key)
 
     if not user_data:
-        print(f"[AUTH] Login failed: user '{user_key}' not found in accounts. Known users: {list(accounts.keys())}")
         return jsonify({"error": f"Account '{username}' does not exist. Click Register to create it!"}), 401
 
     if not verify_password(password, user_data["password_hash"], user_data["salt"]):
-        print(f"[AUTH] Login failed: incorrect password for user '{user_key}'.")
         return jsonify({"error": "Incorrect password. Please try again."}), 401
 
-    print(f"[AUTH] Login success for user '{user_key}'.")
     return jsonify({
         "status": "ok",
         "user": {
@@ -2073,10 +2143,10 @@ def sync_chats_cloud():
 
 @app.route("/api/set_key", methods=["POST"])
 def set_key():
-    global gemini_api_key, current_api_key
+    global gemini_api_key, openrouter_api_key
     data = request.json or {}
-    gemini_api_key = data.get("api_key", DEFAULT_API_KEY)
-    current_api_key = gemini_api_key
+    gemini_api_key = data.get("api_key", "")
+    openrouter_api_key = data.get("openrouter_key", "")
     return jsonify({"status": "ok"})
 
 @app.route("/api/status", methods=["GET"])
@@ -2102,8 +2172,8 @@ def generate_title_route():
         return jsonify({"title": "New chat"})
     
     title_prompt = f"Summarize this user request into a short 2 to 4 word chat title. Return ONLY the title text without quotes, punctuation, or extra markdown:\n'{prompt}'"
-    req_key = gemini_api_key or DEFAULT_API_KEY
-    reply, err = generate_ai_response(title_prompt, current_selected_model, req_key, [])
+    req_key = os.getenv("GEMINI_API_KEY", "") or gemini_api_key
+    reply, err = generate_ai_response(title_prompt, "gemini/gemini-2.5-flash", req_key, [])
     
     if reply:
         clean_title = reply.strip().strip('"').strip("'").split("\n")[0]
@@ -2135,25 +2205,20 @@ def update_context():
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    global current_selected_model, current_api_key
     data = request.json or {}
     s_key = get_session_key(request)
     store = get_session_store(s_key)
 
     prompt = data.get("prompt", "")
-    req_key = data.get("api_key") or gemini_api_key or DEFAULT_API_KEY
-    openrouter_key = data.get("openrouter_key", "")
-    ollama_url = data.get("ollama_url", "")
-    selected_model = data.get("model", "ollama/qwen2.5-coder:latest")
-    
-    current_selected_model = selected_model
-    current_api_key = req_key
+    req_key = data.get("api_key") or os.getenv("GEMINI_API_KEY", "") or gemini_api_key
+    openrouter_key = data.get("openrouter_key") or os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
+    selected_model = data.get("model", "gemini/gemini-2.5-flash")
     
     auto_execute = data.get("auto_execute", False)
     auto_fix = data.get("auto_fix", True)
     history = data.get("history", [])
 
-    reply, err = generate_ai_response(prompt, selected_model, req_key, history, store["game_context"], openrouter_key=openrouter_key, ollama_url=ollama_url)
+    reply, err = generate_ai_response(prompt, selected_model, req_key, history, store["game_context"], openrouter_key=openrouter_key)
     
     if err:
         return jsonify({"error": f"AI Generation Error: {err}"}), 500
@@ -2213,7 +2278,6 @@ def get_script_status(script_id):
 
 @app.route("/api/report_success", methods=["POST"])
 def report_success():
-    """Client reports that the script executed cleanly with 0 errors."""
     data = request.json or {}
     s_key = get_session_key(request)
     store = get_session_store(s_key)
@@ -2232,8 +2296,6 @@ def report_success():
 
 @app.route("/api/report_error", methods=["POST"])
 def report_error():
-    """Agentic Self-Healing Auto-Fix Endpoint."""
-    global current_selected_model, current_api_key
     data = request.json or {}
     s_key = get_session_key(request)
     store = get_session_store(s_key)
@@ -2262,11 +2324,9 @@ def report_error():
         sess["logs"].append("⚠️ Max auto-fix attempts reached (3/3). Stopping loop.")
         sess["status"] = "failed"
         sess["reply"] = f"⚠️ **Script Auto-Fix Limit Reached** (Error: {error_msg})\n```luau\n{failed_code}\n```"
-        print(f"[AUTO-FIX STOP] Reached max retries for script [{script_id}].")
         return jsonify({"status": "max_attempts_reached"}), 400
 
     sess["logs"].append(f"🔧 Auto-Fixing Error... (Attempt {attempts}/3)...")
-    print(f"[AUTO-FIX LOOP] Session [{s_key}] Script [{script_id}] failed! Attempt {attempts}/3. Sending error trace back to AI...")
 
     debug_prompt = f"""
     The previous Luau script failed in the Roblox engine with the following error:
@@ -2282,14 +2342,17 @@ def report_error():
     Please fix all errors in this code and return the corrected script inside a ```luau ... ``` code block.
     """
 
-    reply, err = generate_ai_response(debug_prompt, current_selected_model, current_api_key, sess.get("history", []), store["game_context"])
+    req_key = os.getenv("GEMINI_API_KEY", "") or gemini_api_key
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
+    selected_model = "gemini/gemini-2.5-flash"
+
+    reply, err = generate_ai_response(debug_prompt, selected_model, req_key, sess.get("history", []), store["game_context"], openrouter_key=openrouter_key)
 
     if reply:
         fixed_code = extract_luau_code(reply)
         if fixed_code:
             sess["logs"].append(f"🚀 Queued fixed script (Attempt {attempts}/3) for verification...")
             store["pending_scripts"].append({"id": script_id, "code": fixed_code})
-            print(f"[AUTO-FIX RE-QUEUED] Script [{script_id}] re-queued.")
             return jsonify({"status": "auto_fixed", "new_code": fixed_code, "attempt": attempts})
 
     sess["status"] = "failed"
