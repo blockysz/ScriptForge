@@ -294,7 +294,7 @@ def call_gemini_api(api_key, system_instruction, user_prompt, history=[], target
 
     return None, last_err
 
-def generate_ai_response(user_prompt, selected_model, req_key, history=[], game_ctx={}):
+def generate_ai_response(user_prompt, selected_model, req_key, history=[], game_ctx={}, openrouter_key="", ollama_url=""):
     """UNIFIED AI generation engine used for BOTH chat messages and auto-fixes."""
     system_instruction = """
     You are ScriptForge's expert Luau Scripting Assistant connected directly to a live Roblox game player session.
@@ -308,13 +308,15 @@ def generate_ai_response(user_prompt, selected_model, req_key, history=[], game_
 
     print(f"[AI PIPELINE] Generating response using model: {selected_model}")
 
-    if selected_model.startswith("ollama/") or "qwen" in selected_model or req_key == "ollama":
+    if selected_model.startswith("ollama/") or "qwen" in selected_model:
         model_name = selected_model.replace("ollama/", "")
-        return call_openai_compatible("http://localhost:11434/v1/chat/completions", "", model_name, system_instruction, user_prompt, history, game_ctx)
+        endpoint = (ollama_url or "http://localhost:11434").rstrip('/') + "/v1/chat/completions"
+        return call_openai_compatible(endpoint, "", model_name, system_instruction, user_prompt, history, game_ctx)
     elif selected_model.startswith("openrouter/"):
         m_name = selected_model.replace("openrouter/", "")
         openrouter_models = [m_name, "dots-studio/dots-3-note-preview:free", "cohere/north-mini-code:free", "google/gemma-4-31b-it:free"]
-        return call_openai_compatible("https://openrouter.ai/api/v1/chat/completions", req_key, openrouter_models, system_instruction, user_prompt, history, game_ctx)
+        key = openrouter_key or req_key
+        return call_openai_compatible("https://openrouter.ai/api/v1/chat/completions", key, openrouter_models, system_instruction, user_prompt, history, game_ctx)
     else:
         g_model = selected_model.replace("gemini/", "")
         return call_gemini_api(req_key, system_instruction, user_prompt, history, target_model=g_model, game_ctx=game_ctx)
@@ -856,7 +858,7 @@ HTML_TEMPLATE = r"""
                 <i class="fa-solid fa-moon"></i>
             </button>
 
-            <button class="btn btn-sm btn-outline-secondary border-0 text-light" data-bs-toggle="modal" data-bs-target="#settingsModal" title="AI Settings">
+            <button class="btn btn-sm btn-outline-secondary border-0 text-light" onclick="openSettingsModal()" title="API Keys & Settings">
                 <i class="fa-solid fa-gear"></i>
             </button>
         </div>
@@ -911,7 +913,7 @@ HTML_TEMPLATE = r"""
                 </div>
 
                 <div class="bottom-toggles-bar">
-                    <div class="toggle-group">
+                    <div class="toggle-group align-items-center">
                         <div class="custom-toggle-pill" id="autoExecPill" onclick="toggleAutoExecute()">
                             <span class="toggle-knob"></span>
                             <span><i class="fa-solid fa-bolt me-1"></i> Auto-Run Scripts</span>
@@ -921,10 +923,29 @@ HTML_TEMPLATE = r"""
                             <span class="toggle-knob"></span>
                             <span><i class="fa-solid fa-wrench me-1"></i> Auto-Fix Errors</span>
                         </div>
+
+                        <!-- Upward Model Selector Dropdown matching exact toggle pill design -->
+                        <div class="dropup d-inline-block" id="modelDropup">
+                            <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;">
+                                <i class="fa-solid fa-brain me-1"></i> <span id="bottomModelBadge">qwen2.5-coder</span>
+                            </div>
+                            <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary" style="font-size: 0.84rem; min-width: 280px; margin-bottom: 8px;">
+                                <li><h6 class="dropdown-header text-secondary font-monospace"><i class="fa-solid fa-microchip me-1"></i> LOCAL MODELS</h6></li>
+                                <li><a class="dropdown-item py-2" href="#" onclick="selectModel('ollama/qwen2.5-coder:latest')">🦙 Ollama: qwen2.5-coder (Free Default)</a></li>
+                                <li><hr class="dropdown-divider border-secondary"></li>
+                                <li><h6 class="dropdown-header text-secondary font-monospace"><i class="fa-solid fa-globe me-1"></i> OPENROUTER FREE</h6></li>
+                                <li><a class="dropdown-item py-2" href="#" onclick="selectModel('openrouter/cohere/north-mini-code:free')">🌐 Cohere North Code Free</a></li>
+                                <li><a class="dropdown-item py-2" href="#" onclick="selectModel('openrouter/google/gemma-4-31b-it:free')">🌐 Google Gemma 4 Free</a></li>
+                                <li><hr class="dropdown-divider border-secondary"></li>
+                                <li><h6 class="dropdown-header text-secondary font-monospace"><i class="fa-solid fa-bolt me-1"></i> GEMINI AI</h6></li>
+                                <li><a class="dropdown-item py-2" href="#" onclick="selectModel('gemini/gemini-3.6-flash')">✨ Gemini 3.6 Flash</a></li>
+                                <li><a class="dropdown-item py-2" href="#" onclick="selectModel('gemini/gemini-3.5-flash')">✨ Gemini 3.5 Flash</a></li>
+                            </ul>
+                        </div>
                     </div>
 
                     <div class="text-secondary" style="font-size: 0.78rem;">
-                        <i class="fa-solid fa-brain me-1"></i> Model: <strong class="text-light" id="bottomModelBadge">qwen2.5-coder</strong>
+                        <i class="fa-solid fa-shield-halved me-1"></i> Studio Mode
                     </div>
                 </div>
             </div>
@@ -1047,32 +1068,64 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         </div>
     </div>
 
+    <!-- Redesigned Vertical Settings Page Modal -->
     <div class="modal fade" id="settingsModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content bg-dark text-light border-secondary">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title"><i class="fa-solid fa-sliders me-2"></i>AI Settings</h5>
+                    <h5 class="modal-title"><i class="fa-solid fa-gear me-2"></i> API Keys & Studio Settings</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="mb-4">
-                        <label class="form-label font-weight-bold text-light"><i class="fa-solid fa-brain me-1"></i> Choose AI Model</label>
-                        <select id="modalModelSelector" class="form-select bg-secondary text-light border-0">
-                            <option value="ollama/qwen2.5-coder:latest">🦙 Local Ollama: qwen2.5-coder (Free - Offline Default)</option>
-                            <option value="openrouter/cohere/north-mini-code:free">🌐 OpenRouter Free: Cohere North Code</option>
-                            <option value="openrouter/google/gemma-4-31b-it:free">🌐 OpenRouter Free: Google Gemma 4</option>
-                            <option value="gemini/gemini-3.6-flash">✨ Google Gemini 3.6 Flash</option>
-                            <option value="gemini/gemini-3.5-flash">✨ Google Gemini 3.5 Flash</option>
-                        </select>
-                    </div>
+                <div class="modal-body p-4">
+                    <div class="d-flex flex-column gap-4">
+                        <!-- Line 1: Gemini API Key -->
+                        <div class="p-3 bg-black rounded border border-secondary">
+                            <label class="form-label font-weight-bold text-light mb-1 d-flex justify-content-between">
+                                <span><i class="fa-solid fa-sparkles text-light me-2"></i> Google Gemini API Key</span>
+                                <span class="badge bg-secondary font-monospace">Gemini 3.6 / 3.5</span>
+                            </label>
+                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Required for Google Gemini models. Get key from Google AI Studio.</p>
+                            <input type="password" id="geminiApiKeyInput" class="form-control bg-dark text-light border-secondary font-monospace" placeholder="AIzaSy...">
+                        </div>
 
-                    <div class="mb-3">
-                        <label class="form-label font-weight-bold text-light"><i class="fa-solid fa-key me-1"></i> API Key (OpenRouter / Gemini)</label>
-                        <input type="password" id="apiKeyInput" class="form-control bg-secondary text-light border-0" placeholder="ollama / sk-or-... / AIzaSy...">
+                        <!-- Line 2: OpenRouter API Key -->
+                        <div class="p-3 bg-black rounded border border-secondary">
+                            <label class="form-label font-weight-bold text-light mb-1 d-flex justify-content-between">
+                                <span><i class="fa-solid fa-globe text-light me-2"></i> OpenRouter API Key</span>
+                                <span class="badge bg-secondary font-monospace">OpenRouter Free & Paid</span>
+                            </label>
+                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Required for OpenRouter hosted models (Cohere, Gemma 4, Claude, GPT-4o).</p>
+                            <input type="password" id="openrouterApiKeyInput" class="form-control bg-dark text-light border-secondary font-monospace" placeholder="sk-or-v1-...">
+                        </div>
+
+                        <!-- Line 3: Local Ollama Endpoint -->
+                        <div class="p-3 bg-black rounded border border-secondary">
+                            <label class="form-label font-weight-bold text-light mb-1 d-flex justify-content-between">
+                                <span><i class="fa-solid fa-server text-light me-2"></i> Ollama Server Endpoint</span>
+                                <span class="badge bg-secondary font-monospace">Local Offline</span>
+                            </label>
+                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Local AI server host URL for qwen2.5-coder, deepseek-coder, etc.</p>
+                            <input type="text" id="ollamaEndpointInput" class="form-control bg-dark text-light border-secondary font-monospace" value="http://localhost:11434">
+                        </div>
+
+                        <!-- Line 4: Sync & Storage Scope -->
+                        <div class="p-3 bg-black rounded border border-secondary">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1 text-light fw-bold"><i class="fa-solid fa-cloud-arrow-up me-2"></i> Settings Storage Scope</h6>
+                                    <span class="text-secondary" style="font-size: 0.8rem;" id="settingsSyncScopeText">Saved locally to browser storage</span>
+                                </div>
+                                <span class="badge bg-dark border border-secondary text-light font-monospace" id="settingsScopeBadge">Local Browser</span>
+                            </div>
+                        </div>
+
+                        <!-- Save Button at Bottom -->
+                        <div class="pt-2">
+                            <button type="button" class="btn btn-light w-100 fw-bold py-2 text-dark" onclick="saveSettings()">
+                                <i class="fa-solid fa-floppy-disk me-2"></i> Save All Settings
+                            </button>
+                        </div>
                     </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-light px-4 fw-bold text-dark" onclick="saveSettings()">Save Settings</button>
                 </div>
             </div>
         </div>
@@ -1098,7 +1151,9 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             return key;
         }
 
-        let currentApiKey = localStorage.getItem("GEMINI_API_KEY") || "ollama";
+        let geminiApiKey = localStorage.getItem("GEMINI_API_KEY") || "ollama";
+        let openrouterApiKey = localStorage.getItem("OPENROUTER_API_KEY") || "";
+        let ollamaEndpoint = localStorage.getItem("OLLAMA_ENDPOINT") || "http://localhost:11434";
         let selectedModel = localStorage.getItem("ANTIGRAVITY_SELECTED_MODEL") || "ollama/qwen2.5-coder:latest";
         let autoExecute = localStorage.getItem("ANTIGRAVITY_AUTO_EXECUTE") === "true";
         let autoFix = localStorage.getItem("ANTIGRAVITY_AUTO_FIX") !== "false";
@@ -1112,12 +1167,65 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         document.documentElement.setAttribute("data-bs-theme", currentTheme);
         updateThemeIcon();
         updateAuthHeaderBtn();
-
-        document.getElementById("apiKeyInput").value = currentApiKey;
-        document.getElementById("modalModelSelector").value = selectedModel;
-        document.getElementById("bottomModelBadge").innerText = selectedModel.split('/')[1] || selectedModel;
-        
+        updateModelDisplayBadge();
         updateTogglePillsUI();
+
+        function updateModelDisplayBadge() {
+            const shortName = selectedModel.split('/')[1] || selectedModel;
+            document.getElementById("bottomModelBadge").innerText = shortName;
+        }
+
+        function selectModel(modelName) {
+            selectedModel = modelName;
+            localStorage.setItem("ANTIGRAVITY_SELECTED_MODEL", selectedModel);
+            updateModelDisplayBadge();
+            showToast("Selected Model: " + (selectedModel.split('/')[1] || selectedModel), "fa-solid fa-brain text-light");
+        }
+
+        function openSettingsModal() {
+            document.getElementById("geminiApiKeyInput").value = geminiApiKey;
+            document.getElementById("openrouterApiKeyInput").value = openrouterApiKey;
+            document.getElementById("ollamaEndpointInput").value = ollamaEndpoint;
+
+            const scopeText = document.getElementById("settingsSyncScopeText");
+            const scopeBadge = document.getElementById("settingsScopeBadge");
+
+            if (loggedInUser) {
+                scopeText.innerText = `Synced to Cloud Account (${loggedInUser})`;
+                scopeBadge.innerText = "Account Synced";
+                scopeBadge.className = "badge bg-success text-white font-monospace";
+            } else {
+                scopeText.innerText = "Saved locally to browser storage";
+                scopeBadge.innerText = "Local Browser";
+                scopeBadge.className = "badge bg-dark border border-secondary text-light font-monospace";
+            }
+
+            const modal = new bootstrap.Modal(document.getElementById("settingsModal"));
+            modal.show();
+        }
+
+        function saveSettings() {
+            geminiApiKey = document.getElementById("geminiApiKeyInput").value.trim();
+            openrouterApiKey = document.getElementById("openrouterApiKeyInput").value.trim();
+            ollamaEndpoint = document.getElementById("ollamaEndpointInput").value.trim() || "http://localhost:11434";
+
+            localStorage.setItem("GEMINI_API_KEY", geminiApiKey);
+            localStorage.setItem("OPENROUTER_API_KEY", openrouterApiKey);
+            localStorage.setItem("OLLAMA_ENDPOINT", ollamaEndpoint);
+
+            fetch('/api/set_key', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    api_key: geminiApiKey,
+                    openrouter_key: openrouterApiKey,
+                    ollama_url: ollamaEndpoint
+                })
+            });
+
+            bootstrap.Modal.getInstance(document.getElementById('settingsModal')).hide();
+            showToast("All Settings Saved!", "fa-solid fa-floppy-disk text-light");
+        }
 
         function updateAuthHeaderBtn() {
             const btn = document.getElementById("authHeaderBtn");
@@ -1293,26 +1401,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         function autoGrow(element) {
             element.style.height = "24px";
             element.style.height = Math.min(element.scrollHeight, 120) + "px";
-        }
-
-        function saveSettings() {
-            const key = document.getElementById("apiKeyInput").value.trim();
-            selectedModel = document.getElementById("modalModelSelector").value;
-
-            localStorage.setItem("GEMINI_API_KEY", key);
-            localStorage.setItem("ANTIGRAVITY_SELECTED_MODEL", selectedModel);
-            currentApiKey = key;
-
-            document.getElementById("bottomModelBadge").innerText = selectedModel.split('/')[1] || selectedModel;
-
-            fetch('/api/set_key', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({api_key: key})
-            });
-
-            bootstrap.Modal.getInstance(document.getElementById('settingsModal')).hide();
-            showToast("Settings Saved!", "fa-solid fa-circle-check text-light");
         }
 
         // Generate Formatted Multi-Line GitHub loadstring for current domain + unique Session Key
@@ -1745,7 +1833,9 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     body: JSON.stringify({
                         session_key: getSessionKey(),
                         prompt: prompt,
-                        api_key: currentApiKey,
+                        api_key: geminiApiKey,
+                        openrouter_key: openrouterApiKey,
+                        ollama_url: ollamaEndpoint,
                         model: selectedModel,
                         auto_execute: autoExecute,
                         auto_fix: autoFix,
@@ -2052,6 +2142,8 @@ def chat():
 
     prompt = data.get("prompt", "")
     req_key = data.get("api_key") or gemini_api_key or DEFAULT_API_KEY
+    openrouter_key = data.get("openrouter_key", "")
+    ollama_url = data.get("ollama_url", "")
     selected_model = data.get("model", "ollama/qwen2.5-coder:latest")
     
     current_selected_model = selected_model
@@ -2061,7 +2153,7 @@ def chat():
     auto_fix = data.get("auto_fix", True)
     history = data.get("history", [])
 
-    reply, err = generate_ai_response(prompt, selected_model, req_key, history, store["game_context"])
+    reply, err = generate_ai_response(prompt, selected_model, req_key, history, store["game_context"], openrouter_key=openrouter_key, ollama_url=ollama_url)
     
     if err:
         return jsonify({"error": f"AI Generation Error: {err}"}), 500
