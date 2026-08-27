@@ -859,15 +859,15 @@ HTML_TEMPLATE = r"""
                 <div class="input-box">
                     <textarea id="userInput" placeholder="Ask ScriptForge to write a Luau script for your game..." oninput="autoGrow(this)" onkeydown="handleKeyDown(event)"></textarea>
 
-                    <!-- Subtle, Minimal Gray Mode Selector Dropup Button Next to Send Button -->
-                    <div class="dropup d-inline-block me-1" id="modeInputDropup">
-                        <button class="btn btn-sm text-secondary border-0 p-0 shadow-none d-flex align-items-center gap-1 dropdown-toggle" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" style="background: transparent; font-size: 0.76rem; color: #777777; cursor: pointer; border-radius: 4px;">
-                            <i class="fa-solid fa-code" id="modePillIcon" style="font-size: 0.72rem; color: #777777;"></i> <span id="modePillLabel" style="font-size: 0.76rem; color: #777777;">coding</span>
+                    <!-- Clean, Slightly Larger Mode Selector Button Directly to the left of Send button with proper spacing -->
+                    <div class="dropup d-inline-block me-2 align-self-center" id="modeInputDropup" style="position: relative;">
+                        <button class="btn btn-sm text-secondary border-0 p-0 shadow-none d-flex align-items-center gap-1 dropdown-toggle" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" style="background: transparent; font-size: 0.82rem; color: #888888; cursor: pointer; border-radius: 4px; line-height: 1;">
+                            <i class="fa-solid fa-code" id="modePillIcon" style="font-size: 0.8rem; color: #888888;"></i> <span id="modePillLabel" style="font-size: 0.82rem; color: #888888;">coding mode</span>
                         </button>
-                        <ul class="dropdown-menu dropdown-menu-dark shadow border-secondary py-1" style="font-size: 0.75rem; min-width: 130px; background: #141414 !important; border: 1px solid #282828 !important;">
-                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.75rem; color: #aaaaaa !important;" href="#" id="modeItemCoding" onclick="setAiMode('coding')">coding mode</a></li>
-                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.75rem; color: #777777 !important;" href="#" id="modeItemThinking" onclick="setAiMode('thinking')">thinking mode</a></li>
-                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.75rem; color: #777777 !important;" href="#" id="modeItemChat" onclick="setAiMode('chat')">general chat</a></li>
+                        <ul class="dropdown-menu dropdown-menu-dark shadow border-secondary py-1" style="font-size: 0.8rem; min-width: 140px; background: #141414 !important; border: 1px solid #282828 !important; right: 0; left: auto !important; bottom: 100% !important; top: auto !important; margin-bottom: 6px !important; transform: none !important;">
+                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.8rem; color: #bbbbbb !important;" href="#" id="modeItemCoding" onclick="setAiMode('coding')">coding mode</a></li>
+                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.8rem; color: #888888 !important;" href="#" id="modeItemThinking" onclick="setAiMode('thinking')">thinking mode</a></li>
+                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.8rem; color: #888888 !important;" href="#" id="modeItemChat" onclick="setAiMode('chat')">general chat</a></li>
                         </ul>
                     </div>
 
@@ -1145,18 +1145,18 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             document.querySelectorAll("#modeInputDropup .dropdown-item").forEach(item => item.style.fontWeight = "normal");
 
             if (aiMode === "thinking") {
-                labelEl.innerText = "thinking";
+                labelEl.innerText = "thinking mode";
                 iconEl.className = "fa-solid fa-brain";
                 const el = document.getElementById("modeItemThinking");
                 if (el) el.style.fontWeight = "600";
             } else if (aiMode === "chat") {
-                labelEl.innerText = "chat";
+                labelEl.innerText = "general chat";
                 iconEl.className = "fa-solid fa-comments";
                 const el = document.getElementById("modeItemChat");
                 if (el) el.style.fontWeight = "600";
             } else {
                 aiMode = "coding";
-                labelEl.innerText = "coding";
+                labelEl.innerText = "coding mode";
                 iconEl.className = "fa-solid fa-code";
                 const el = document.getElementById("modeItemCoding");
                 if (el) el.style.fontWeight = "600";
