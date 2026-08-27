@@ -318,6 +318,32 @@ HTML_TEMPLATE = r"""
             transition: background-color 0.2s ease, color 0.2s ease;
         }
 
+        /* 100% Monochrome Button Utility Classes */
+        .btn-theme-primary {
+            background-color: var(--accent) !important;
+            color: var(--btn-text) !important;
+            border: none !important;
+            font-weight: 700 !important;
+            transition: background-color 0.2s ease;
+        }
+        .btn-theme-primary:hover {
+            background-color: var(--accent-hover) !important;
+            color: var(--btn-text) !important;
+        }
+
+        .btn-theme-outline {
+            background-color: transparent !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-color) !important;
+            font-weight: 600 !important;
+            transition: all 0.2s ease;
+        }
+        .btn-theme-outline:hover {
+            background-color: var(--bg-card) !important;
+            border-color: var(--text-primary) !important;
+            color: var(--text-primary) !important;
+        }
+
         .toast-popup {
             position: fixed;
             top: -80px;
@@ -389,7 +415,7 @@ HTML_TEMPLATE = r"""
             height: 7px;
             border-radius: 50%;
         }
-        .dot-online { background-color: #10b981; box-shadow: 0 0 6px #10b981; }
+        .dot-online { background-color: var(--text-primary); box-shadow: 0 0 6px var(--text-primary); }
         .dot-offline { background-color: var(--text-secondary); }
 
         .main-container {
@@ -857,6 +883,19 @@ HTML_TEMPLATE = r"""
         code {
             color: var(--text-primary) !important;
         }
+
+        /* 100% Monochrome Auth Tabs */
+        .auth-tab-btn {
+            background-color: var(--bg-input);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            font-weight: 600;
+        }
+        .auth-tab-btn.active {
+            background-color: var(--accent) !important;
+            color: var(--btn-text) !important;
+            font-weight: 700;
+        }
     </style>
 </head>
 <body>
@@ -872,11 +911,11 @@ HTML_TEMPLATE = r"""
         </div>
 
         <div class="d-flex align-items-center gap-2">
-            <button class="btn btn-sm btn-outline-secondary text-primary border-secondary fw-bold" onclick="openAuthModal()" id="authHeaderBtn">
+            <button class="btn btn-sm btn-theme-outline" onclick="openAuthModal()" id="authHeaderBtn">
                 <i class="fa-solid fa-user me-1"></i> Login / Sign Up
             </button>
 
-            <button class="btn btn-sm btn-outline-secondary text-primary border-secondary fw-bold" onclick="openExecutorModal()" title="Get Executor Client Script">
+            <button class="btn btn-sm btn-theme-outline" onclick="openExecutorModal()" title="Get Executor Client Script">
                 <i class="fa-solid fa-plug me-1"></i> Connect Executor
             </button>
 
@@ -884,11 +923,11 @@ HTML_TEMPLATE = r"""
                 <span class="dot dot-offline"></span> Disconnected
             </div>
 
-            <button class="btn btn-sm btn-outline-secondary border-0 text-primary" onclick="toggleTheme()" id="themeBtn" title="Toggle Light / Dark Mode">
+            <button class="btn btn-sm btn-theme-outline border-0" onclick="toggleTheme()" id="themeBtn" title="Toggle Light / Dark Mode">
                 <i class="fa-solid fa-moon"></i>
             </button>
 
-            <button class="btn btn-sm btn-outline-secondary border-0 text-primary" onclick="openSettingsModal()" title="API Keys & Settings">
+            <button class="btn btn-sm btn-theme-outline border-0" onclick="openSettingsModal()" title="API Keys & Settings">
                 <i class="fa-solid fa-gear"></i>
             </button>
         </div>
@@ -897,7 +936,7 @@ HTML_TEMPLATE = r"""
     <div class="main-container">
         <div class="sidebar">
             <div class="sidebar-section">
-                <button class="btn btn-sm btn-outline-secondary text-primary border-secondary w-100 fw-bold py-1 text-start ps-3 mb-2" onclick="createNewChat()">
+                <button class="btn btn-sm btn-theme-outline w-100 fw-bold py-1 text-start ps-3 mb-2" onclick="createNewChat()">
                     <i class="fa-solid fa-plus me-2"></i> New chat
                 </button>
 
@@ -923,7 +962,7 @@ HTML_TEMPLATE = r"""
                     <div class="d-flex justify-content-between"><span class="text-secondary">Game:</span> <span class="fw-bold text-primary text-truncate" id="statGame" style="max-width: 120px;">-</span></div>
                     <div class="d-flex justify-content-between"><span class="text-secondary">Remotes:</span> <span class="fw-bold text-primary" id="statRemotes">0</span></div>
                 </div>
-                <button class="btn btn-sm btn-outline-secondary text-primary w-100 mt-2 fw-bold border-secondary" style="font-size: 0.75rem;" onclick="openExecutorModal()">
+                <button class="btn btn-sm btn-theme-outline w-100 mt-2" style="font-size: 0.75rem;" onclick="openExecutorModal()">
                     <i class="fa-solid fa-code me-1"></i> Get Client Script
                 </button>
             </div>
@@ -1001,10 +1040,10 @@ HTML_TEMPLATE = r"""
                     <div id="authLoggedOutView">
                         <ul class="nav nav-pills nav-justified mb-3" id="authTabs" role="tablist">
                             <li class="nav-item">
-                                <button class="nav-link active bg-secondary text-light fw-bold me-1" id="loginTabBtn" onclick="switchAuthTab('login')">Log In</button>
+                                <button class="nav-link auth-tab-btn active me-1" id="loginTabBtn" onclick="switchAuthTab('login')">Log In</button>
                             </li>
                             <li class="nav-item">
-                                <button class="nav-link theme-card text-secondary fw-bold border border-secondary" id="registerTabBtn" onclick="switchAuthTab('register')">Register</button>
+                                <button class="nav-link auth-tab-btn" id="registerTabBtn" onclick="switchAuthTab('register')">Register</button>
                             </li>
                         </ul>
 
@@ -1017,7 +1056,7 @@ HTML_TEMPLATE = r"""
                                 <label class="form-label text-secondary" style="font-size: 0.85rem;">Password</label>
                                 <input type="password" id="loginPassword" name="sf_account_password" autocomplete="current-password" class="form-control theme-input border-secondary" placeholder="Enter password">
                             </div>
-                            <button class="btn btn-primary w-100 fw-bold" onclick="submitLogin()"><i class="fa-solid fa-right-to-bracket me-1"></i> Log In</button>
+                            <button class="btn btn-theme-primary w-100 py-2" onclick="submitLogin()"><i class="fa-solid fa-right-to-bracket me-1"></i> Log In</button>
                         </div>
 
                         <div id="registerForm" style="display: none;">
@@ -1029,7 +1068,7 @@ HTML_TEMPLATE = r"""
                                 <label class="form-label text-secondary" style="font-size: 0.85rem;">Password</label>
                                 <input type="password" id="regPassword" name="sf_reg_password" autocomplete="new-password" class="form-control theme-input border-secondary" placeholder="Create a password">
                             </div>
-                            <button class="btn btn-primary w-100 fw-bold" onclick="submitRegister()"><i class="fa-solid fa-user-plus me-1"></i> Create Account</button>
+                            <button class="btn btn-theme-primary w-100 py-2" onclick="submitRegister()"><i class="fa-solid fa-user-plus me-1"></i> Create Account</button>
                         </div>
                     </div>
 
@@ -1053,7 +1092,7 @@ HTML_TEMPLATE = r"""
                             </div>
                         </div>
 
-                        <button class="btn btn-outline-danger w-100 fw-bold" onclick="submitLogout()"><i class="fa-solid fa-right-from-bracket me-1"></i> Log Out</button>
+                        <button class="btn btn-theme-outline w-100 py-2" onclick="submitLogout()"><i class="fa-solid fa-right-from-bracket me-1"></i> Log Out</button>
                     </div>
                 </div>
             </div>
@@ -1065,7 +1104,7 @@ HTML_TEMPLATE = r"""
         <div class="modal-dialog">
             <div class="modal-content border-secondary">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title text-warning"><i class="fa-solid fa-triangle-exclamation me-2"></i>OpenRouter API Key Required</h5>
+                    <h5 class="modal-title text-primary"><i class="fa-solid fa-circle-exclamation me-2"></i>OpenRouter API Key Required</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -1077,8 +1116,8 @@ HTML_TEMPLATE = r"""
                     </div>
                 </div>
                 <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-primary fw-bold px-4" onclick="openSettingsModalFromWarning()"><i class="fa-solid fa-gear me-1"></i> Open Settings</button>
-                    <button type="button" class="btn btn-outline-secondary text-primary px-3" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-theme-primary px-4 py-2" onclick="openSettingsModalFromWarning()"><i class="fa-solid fa-gear me-1"></i> Open Settings</button>
+                    <button type="button" class="btn btn-theme-outline px-3 py-2" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
@@ -1101,7 +1140,7 @@ HTML_TEMPLATE = r"""
                         <div class="code-header">
                             <span><i class="fa-solid fa-key me-1"></i> Player-Specific Session Loadstring</span>
                             <div>
-                                <button class="btn btn-sm btn-outline-secondary text-primary fw-bold py-0 px-2 border-secondary" style="font-size: 0.78rem;" onclick="copyExecutorScript()">
+                                <button class="btn btn-sm btn-theme-outline py-0 px-2" style="font-size: 0.78rem;" onclick="copyExecutorScript()">
                                     <i class="fa-solid fa-copy me-1"></i> Copy Loadstring
                                 </button>
                             </div>
@@ -1118,8 +1157,8 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     </div>
                 </div>
                 <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-primary fw-bold px-4" onclick="copyExecutorScript()"><i class="fa-solid fa-copy me-1"></i> Copy Code</button>
-                    <button type="button" class="btn btn-outline-secondary text-primary px-3" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-theme-primary px-4 py-2" onclick="copyExecutorScript()"><i class="fa-solid fa-copy me-1"></i> Copy Code</button>
+                    <button type="button" class="btn btn-theme-outline px-3 py-2" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
@@ -1141,7 +1180,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                                 <label class="form-label font-weight-bold text-primary mb-0">
                                     <i class="fa-solid fa-globe me-2"></i> OpenRouter API Key
                                 </label>
-                                <a href="https://openrouter.ai/keys" target="_blank" class="btn btn-sm btn-outline-secondary text-primary border-secondary font-monospace py-0 px-2" style="font-size: 0.78rem;">
+                                <a href="https://openrouter.ai/keys" target="_blank" class="btn btn-sm btn-theme-outline font-monospace py-0 px-2" style="font-size: 0.78rem;">
                                     <i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Get OpenRouter Key
                                 </a>
                             </div>
@@ -1162,7 +1201,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
                         <!-- Save Button at Bottom -->
                         <div class="pt-2">
-                            <button type="button" class="btn btn-primary w-100 fw-bold py-2" onclick="saveSettings()">
+                            <button type="button" class="btn btn-theme-primary w-100 py-2" onclick="saveSettings()">
                                 <i class="fa-solid fa-floppy-disk me-2"></i> Save All Settings
                             </button>
                         </div>
@@ -1283,17 +1322,17 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 ALL_MODELS.forEach(m => {
                     const li = document.createElement("li");
                     const isSelected = m.id === selectedModel;
-                    li.innerHTML = `<a class="dropdown-item py-2 d-flex justify-content-between align-items-center ${isSelected ? 'active fw-bold' : ''}" href="#" onclick="selectModel('${m.id}')"><span>${escapeHtml(m.name)}</span> ${isSelected ? '<i class="fa-solid fa-check text-success"></i>' : ''}</a>`;
+                    li.innerHTML = `<a class="dropdown-item py-2 d-flex justify-content-between align-items-center ${isSelected ? 'active fw-bold' : ''}" href="#" onclick="selectModel('${m.id}')"><span>${escapeHtml(m.name)}</span> ${isSelected ? '<i class="fa-solid fa-check"></i>' : ''}</a>`;
                     listEl.appendChild(li);
                 });
             } else {
                 const header2 = document.createElement("li");
-                header2.innerHTML = `<h6 class="dropdown-header text-warning font-monospace">OPENROUTER KEY REQUIRED</h6>`;
+                header2.innerHTML = `<h6 class="dropdown-header font-monospace text-secondary">OPENROUTER KEY REQUIRED</h6>`;
                 listEl.appendChild(header2);
 
                 ALL_MODELS.forEach(m => {
                     const li = document.createElement("li");
-                    li.innerHTML = `<a class="dropdown-item py-2 d-flex justify-content-between align-items-center text-secondary" href="#" onclick="clickUnconnectedModel('${m.id}', '${escapeHtml(m.name)}')"><span>${escapeHtml(m.name)}</span> <span class="badge bg-warning text-dark" style="font-size:0.68rem;">Needs Key</span></a>`;
+                    li.innerHTML = `<a class="dropdown-item py-2 d-flex justify-content-between align-items-center text-secondary" href="#" onclick="clickUnconnectedModel('${m.id}', '${escapeHtml(m.name)}')"><span>${escapeHtml(m.name)}</span> <span class="badge theme-input text-secondary border border-secondary" style="font-size:0.68rem;">Needs Key</span></a>`;
                     listEl.appendChild(li);
                 });
             }
@@ -1326,7 +1365,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             if (loggedInUser) {
                 scopeText.innerText = `Synced to Cloud Account (${loggedInUser})`;
                 scopeBadge.innerText = "Account Synced";
-                scopeBadge.className = "badge bg-success text-white font-monospace";
+                scopeBadge.className = "badge theme-input text-primary font-monospace border border-secondary";
             } else {
                 scopeText.innerText = "Saved locally to browser storage";
                 scopeBadge.innerText = "Local Browser";
@@ -1382,13 +1421,13 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             const regForm = document.getElementById("registerForm");
 
             if (tab === 'login') {
-                loginBtn.className = "nav-link active bg-secondary text-light fw-bold me-1";
-                regBtn.className = "nav-link theme-card text-secondary fw-bold border border-secondary";
+                loginBtn.className = "nav-link auth-tab-btn active me-1";
+                regBtn.className = "nav-link auth-tab-btn";
                 loginForm.style.display = "block";
                 regForm.style.display = "none";
             } else {
-                regBtn.className = "nav-link active bg-secondary text-light fw-bold";
-                loginBtn.className = "nav-link theme-card text-secondary fw-bold border border-secondary me-1";
+                regBtn.className = "nav-link auth-tab-btn active";
+                loginBtn.className = "nav-link auth-tab-btn me-1";
                 regForm.style.display = "block";
                 loginForm.style.display = "none";
             }
@@ -1398,7 +1437,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             const user = document.getElementById("loginUsername").value.trim();
             const pass = document.getElementById("loginPassword").value;
             if (!user || !pass) {
-                showToast("Please enter username and password", "fa-solid fa-circle-exclamation text-warning");
+                showToast("Please enter username and password", "fa-solid fa-circle-exclamation");
                 return;
             }
 
@@ -1411,7 +1450,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
                 const data = await res.json();
                 if (data.error) {
-                    showToast(data.error, "fa-solid fa-circle-exclamation text-warning");
+                    showToast(data.error, "fa-solid fa-circle-exclamation");
                 } else {
                     loggedInUser = data.user.username;
                     localStorage.setItem("SCRIPTFORGE_USER", loggedInUser);
@@ -1430,7 +1469,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     showToast(`Welcome back, ${loggedInUser}!`, "fa-solid fa-circle-check");
                 }
             } catch(e) {
-                showToast("Connection error: " + e.message, "fa-solid fa-circle-exclamation text-warning");
+                showToast("Connection error: " + e.message, "fa-solid fa-circle-exclamation");
             }
         }
 
@@ -1438,7 +1477,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             const user = document.getElementById("regUsername").value.trim();
             const pass = document.getElementById("regPassword").value;
             if (!user || !pass) {
-                showToast("Please choose a username and password", "fa-solid fa-circle-exclamation text-warning");
+                showToast("Please choose a username and password", "fa-solid fa-circle-exclamation");
                 return;
             }
 
@@ -1451,7 +1490,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
                 const data = await res.json();
                 if (data.error) {
-                    showToast(data.error, "fa-solid fa-circle-exclamation text-warning");
+                    showToast(data.error, "fa-solid fa-circle-exclamation");
                 } else {
                     loggedInUser = data.user.username;
                     localStorage.setItem("SCRIPTFORGE_USER", loggedInUser);
@@ -1461,7 +1500,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     syncChatsToCloud();
                 }
             } catch(e) {
-                showToast("Connection error: " + e.message, "fa-solid fa-circle-exclamation text-warning");
+                showToast("Connection error: " + e.message, "fa-solid fa-circle-exclamation");
             }
         }
 
@@ -1634,7 +1673,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         function deleteChat(id, e) {
             e.stopPropagation();
             if (chats.length <= 1) {
-                showToast("Cannot delete active chat", "fa-solid fa-circle-exclamation text-warning");
+                showToast("Cannot delete active chat", "fa-solid fa-circle-exclamation");
                 return;
             }
             chats = chats.filter(c => c.id !== id);
@@ -1883,7 +1922,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
                     if (wasConnected) {
                         wasConnected = false;
-                        showToast("Roblox Session Disconnected", "fa-solid fa-circle-exclamation text-warning");
+                        showToast("Roblox Session Disconnected", "fa-solid fa-circle-exclamation");
                     }
                 }
             } catch (e) {
@@ -2062,10 +2101,10 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 header.innerHTML = `
                     <span>luau</span>
                     <div>
-                        <button class="btn btn-sm btn-outline-secondary text-primary me-1 py-0 px-2 fw-bold border-secondary" style="font-size: 0.75rem;" onclick="runInRoblox(this)">
+                        <button class="btn btn-sm btn-theme-outline me-1 py-0 px-2 fw-bold" style="font-size: 0.75rem;" onclick="runInRoblox(this)">
                             Run in Game
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary text-primary py-0 px-2 border-secondary" style="font-size: 0.75rem;" onclick="copyCode(this)">
+                        <button class="btn btn-sm btn-theme-outline py-0 px-2" style="font-size: 0.75rem;" onclick="copyCode(this)">
                             Copy
                         </button>
                     </div>
@@ -2088,7 +2127,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 });
                 showToast("Script queued to Roblox Executor", "fa-solid fa-rocket");
             } catch(e) {
-                showToast("Error sending script: " + e.message, "fa-solid fa-circle-exclamation text-warning");
+                showToast("Error sending script: " + e.message, "fa-solid fa-circle-exclamation");
             }
         }
 
