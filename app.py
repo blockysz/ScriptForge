@@ -246,9 +246,25 @@ HTML_TEMPLATE = r"""
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScriptForge | Live Roblox AI Studio</title>
+    <title>ScriptForge | Roblox Executor AI Studio</title>
     
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230a0a0a'/><path d='M25 65 L75 65 L70 50 L30 50 Z M40 50 L40 35 L60 35 L60 50 Z' fill='%23ffffff'/><polygon points='52 20 38 48 50 48 44 75 62 42 50 42' fill='%23ffffff'/></svg>">
+    <!-- Open Graph / Discord Embed Link Preview Meta Tags -->
+    <meta name="title" content="ScriptForge | Roblox Executor AI Studio">
+    <meta name="description" content="The ultimate AI script generator & real-time auto-fixer for Roblox executors (Solara, Wave, Delta, MacSploit). Write, run, and auto-debug Luau scripts live in your Roblox player session.">
+    <meta name="theme-color" content="#ffffff">
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://scriptforge.vercel.app">
+    <meta property="og:title" content="ScriptForge | Roblox Executor AI Studio">
+    <meta property="og:description" content="The ultimate AI script generator & real-time auto-fixer for Roblox executors (Solara, Wave, Delta, MacSploit). Write, run, and auto-debug Luau scripts live in your Roblox player session.">
+    <meta property="og:site_name" content="ScriptForge Studio">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ScriptForge | Roblox Executor AI Studio">
+    <meta name="twitter:description" content="The ultimate AI script generator & real-time auto-fixer for Roblox executors (Solara, Wave, Delta, MacSploit). Write, run, and auto-debug Luau scripts live in your Roblox player session.">
+
+    <!-- Tab Favicon Matching Header Brand Hammer Icon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230f0f0f'/><g transform='translate(18,18) scale(1.3)' fill='%23ffffff'><path d='M22.7 19.3L15 11.6 18.4 8.2c.8-.8.8-2 0-2.8l-3.8-3.8c-.8-.8-2-.8-2.8 0L3.6 9.8c-.8.8-.8 2 0 2.8l3.8 3.8c.8.8 2 .8 2.8 0l3.4-3.4 7.7 7.7c.4.4 1 .4 1.4 0l3.4-3.4c.4-.4.4-1 0-1.4z M9.8 45.4c1.1 1.1 2.9 1.1 4 0l16.4-16.4c1.1-1.1 1.1-2.9 0-4l-3-3c-1.1-1.1-2.9-1.1-4 0L6.8 38.4c-1.1 1.1-1.1 2.9 0 4l3 3z'/></g></svg>">
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -1629,7 +1645,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 messages: [
                     {
                         role: 'ai',
-                        content: "Welcome to ScriptForge. Connect your Roblox executor script to start writing & auto-fixing game scripts in real-time."
+                        content: "⚡ **Welcome to ScriptForge** — The #1 AI Studio built specifically for **Roblox Executors** (Solara, Wave, Delta, MacSploit).\n\nAsk for any script (*Auto-Farm, Remote Spammers, Teleports, ESP, Speed Hacks*) and ScriptForge will write, test, and auto-fix Luau code live inside your Roblox player session!"
                     }
                 ]
             };
