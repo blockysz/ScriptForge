@@ -29,7 +29,6 @@ def load_accounts():
     """Load user accounts safely from Vercel KV / Upstash Redis or local JSON database."""
     global accounts_in_memory
 
-    # 1. Try Vercel KV / Upstash Redis if configured
     if KV_URL and KV_TOKEN:
         try:
             url = f"{KV_URL.rstrip('/')}/get/scriptforge_accounts"
@@ -43,11 +42,9 @@ def load_accounts():
         except Exception as e:
             print(f"[ACCOUNTS] Error reading Vercel KV: {e}")
 
-    # 2. Fallback to in-memory cache
     if accounts_in_memory:
         return accounts_in_memory
 
-    # 3. Fallback to local JSON file
     if os.path.exists(ACCOUNTS_FILE):
         try:
             with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
@@ -271,19 +268,31 @@ def call_gemini_api(api_key, system_instruction, user_prompt, history=[], target
 
     return None, "No candidate response returned from Gemini API"
 
-def generate_ai_response(user_prompt, selected_model, req_key, history=[], game_ctx={}, openrouter_key=""):
-    """UNIFIED AI generation engine used for BOTH chat messages and auto-fixes."""
-    system_instruction = """
-    You are ScriptForge's expert Luau Scripting Assistant connected directly to a live Roblox game player session.
+def generate_ai_response(user_prompt, selected_model, req_key, history=[], game_ctx={}, openrouter_key="", ai_mode="coding"):
+    """UNIFIED AI generation engine with AI Modes (Coding, Thinking, Chat)."""
     
-    Your goals:
-    1. Answer the user's questions clearly in normal Markdown chat.
-    2. When requested to write or fix a script, generate valid Luau code inside ```luau ... ``` or ```lua ... ``` blocks.
-    3. Use exact Remote names, paths, and workspace items provided in the live context.
-    4. Write code suitable for a Roblox Client Executor (using standard Luau + executor tools like request, firetouchinterest, etc. if appropriate).
-    """
+    if ai_mode == "thinking":
+        system_instruction = """
+        You are ScriptForge's Deep Reasoning & Architecture Assistant connected directly to a live Roblox game player session.
+        Your goal:
+        1. Perform deep reasoning, step-by-step planning, and architectural breakdown for Roblox game systems (RemoteEvents, DataStores, Inventory systems).
+        2. Explain how components interact before outputting code inside ```luau ... ``` blocks.
+        """
+    elif ai_mode == "chat":
+        system_instruction = """
+        You are ScriptForge's friendly AI Chat Assistant connected directly to a live Roblox game player session.
+        Your goal:
+        1. Answer game design, scripting, and Roblox concept questions conversationally in standard Markdown.
+        2. Provide helpful explanations, tips, and guidelines.
+        """
+    else: # Default: Coding Mode
+        system_instruction = """
+        You are ScriptForge's expert Luau Scripting Assistant connected directly to a live Roblox game player session.
+        Your primary goal is writing, testing, auto-fixing, and optimizing valid Luau code inside ```luau ... ``` blocks suitable for execution.
+        Use exact Remote names, leaderstats, and workspace paths from live context.
+        """
 
-    print(f"[AI PIPELINE] Generating response using model: {selected_model}")
+    print(f"[AI PIPELINE] Generating response using model: {selected_model} (Mode: {ai_mode})")
 
     if selected_model.startswith("openrouter/"):
         m_name = selected_model.replace("openrouter/", "")
@@ -778,7 +787,6 @@ HTML_TEMPLATE = r"""
             box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
         }
 
-        /* Upward Dropdown Menu Floating Overlap Fix */
         .dropup .dropdown-menu {
             z-index: 99999 !important;
             position: absolute !important;
@@ -903,20 +911,33 @@ HTML_TEMPLATE = r"""
 
                 <div class="bottom-toggles-bar">
                     <div class="toggle-group align-items-center">
+                        <!-- AI Mode Selector Dropup Pill Button -->
+                        <div class="dropup d-inline-block" id="modeDropup">
+                            <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;">
+                                <i class="fa-solid fa-code me-1" id="modePillIcon"></i> <span id="modePillLabel">Mode: Coding</span>
+                            </div>
+                            <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary" style="font-size: 0.84rem; min-width: 240px;">
+                                <li><h6 class="dropdown-header text-secondary font-monospace"><i class="fa-solid fa-sliders me-1"></i> SELECT AI MODE</h6></li>
+                                <li><a class="dropdown-item py-2 fw-bold active" href="#" id="modeItemCoding" onclick="setAiMode('coding')"><i class="fa-solid fa-code me-2"></i> 💻 Coding Mode (Default)</a></li>
+                                <li><a class="dropdown-item py-2 fw-bold" href="#" id="modeItemThinking" onclick="setAiMode('thinking')"><i class="fa-solid fa-brain me-2"></i> 🧠 Thinking Mode</a></li>
+                                <li><a class="dropdown-item py-2 fw-bold" href="#" id="modeItemChat" onclick="setAiMode('chat')"><i class="fa-solid fa-comments me-2"></i> 💬 General Chat</a></li>
+                            </ul>
+                        </div>
+
                         <div class="custom-toggle-pill" id="autoExecPill" onclick="toggleAutoExecute()">
                             <span class="toggle-knob"></span>
-                            <span><i class="fa-solid fa-bolt me-1"></i> Auto-Run Scripts</span>
+                            <span><i class="fa-solid fa-bolt me-1"></i> Auto-Run</span>
                         </div>
 
                         <div class="custom-toggle-pill active" id="autoFixPill" onclick="toggleAutoFix()">
                             <span class="toggle-knob"></span>
-                            <span><i class="fa-solid fa-wrench me-1"></i> Auto-Fix Errors</span>
+                            <span><i class="fa-solid fa-wrench me-1"></i> Auto-Fix</span>
                         </div>
 
                         <!-- Upward Model Selector Dropdown with z-index overlap fix -->
                         <div class="dropup d-inline-block" id="modelDropup">
                             <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;" onclick="renderModelDropupList()">
-                                <i class="fa-solid fa-brain me-1"></i> <span id="bottomModelBadge">gemini-2.5-flash</span>
+                                <i class="fa-solid fa-robot me-1"></i> <span id="bottomModelBadge">gemini-2.5-flash</span>
                             </div>
                             <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary" id="modelDropupList" style="font-size: 0.84rem; min-width: 320px;">
                                 <!-- Dynamic Rendered Items -->
@@ -1016,7 +1037,7 @@ HTML_TEMPLATE = r"""
                         The API key for this service is not connected yet. Please add your key in Settings.
                     </p>
                     <div class="p-3 bg-black rounded border border-secondary text-secondary" style="font-size: 0.82rem;">
-                        <i class="fa-solid fa-circle-info text-light me-1"></i> Add your Gemini or OpenRouter API key in Settings to unlock this AI model.
+                        <i class="fa-solid fa-circle-info text-light me-1"></i> Connecting your OpenRouter or Gemini API key in Settings unlocks ALL models (Claude, GPT-4o, DeepSeek, Qwen, Gemma, Gemini).
                     </div>
                 </div>
                 <div class="modal-footer border-secondary">
@@ -1068,7 +1089,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         </div>
     </div>
 
-    <!-- Vertical Settings Page Modal with Get API Key Links & Expanded Models -->
+    <!-- Vertical Settings Page Modal with Clear OpenRouter Multi-Model Key Label -->
     <div class="modal fade" id="settingsModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content bg-dark text-light border-secondary">
@@ -1097,12 +1118,13 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                             <div class="d-flex justify-content-between align-items-center mb-1">
                                 <label class="form-label font-weight-bold text-light mb-0">
                                     <i class="fa-solid fa-globe text-light me-2"></i> OpenRouter API Key
+                                    <span class="badge bg-success ms-2 font-monospace" style="font-size: 0.7rem;">Unlocks Claude, GPT-4o, DeepSeek, Qwen & Gemma</span>
                                 </label>
                                 <a href="https://openrouter.ai/keys" target="_blank" class="btn btn-sm btn-outline-light font-monospace py-0 px-2" style="font-size: 0.78rem;">
                                     <i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Get OpenRouter Key
                                 </a>
                             </div>
-                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Unlocks Claude 3.5 Sonnet, GPT-4o, DeepSeek Coder, Qwen 2.5 Coder 32B, Gemma 4, etc.</p>
+                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Connecting your single OpenRouter API key unlocks Claude 3.5 Sonnet, GPT-4o, DeepSeek Coder V2, Qwen 2.5 Coder 32B, Gemma 4, etc.</p>
                             <input type="password" id="openrouterApiKeyInput" class="form-control bg-dark text-light border-secondary font-monospace" placeholder="sk-or-v1-...">
                         </div>
 
@@ -1152,6 +1174,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         let geminiApiKey = localStorage.getItem("GEMINI_API_KEY") || "";
         let openrouterApiKey = localStorage.getItem("OPENROUTER_API_KEY") || "";
         let selectedModel = localStorage.getItem("ANTIGRAVITY_SELECTED_MODEL") || "gemini/gemini-2.5-flash";
+        let aiMode = localStorage.getItem("SCRIPTFORGE_AI_MODE") || "coding"; // Default Coding Mode
         let autoExecute = localStorage.getItem("ANTIGRAVITY_AUTO_EXECUTE") === "true";
         let autoFix = localStorage.getItem("ANTIGRAVITY_AUTO_FIX") !== "false";
         let currentTheme = localStorage.getItem("ANTIGRAVITY_THEME") || "dark";
@@ -1187,6 +1210,38 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         updateAuthHeaderBtn();
         updateModelDisplayBadge();
         updateTogglePillsUI();
+        updateAiModeUI();
+
+        function updateAiModeUI() {
+            const labelEl = document.getElementById("modePillLabel");
+            const iconEl = document.getElementById("modePillIcon");
+            
+            document.querySelectorAll("#modeDropup .dropdown-item").forEach(item => item.classList.remove("active"));
+
+            if (aiMode === "thinking") {
+                labelEl.innerText = "Mode: Thinking";
+                iconEl.className = "fa-solid fa-brain me-1";
+                document.getElementById("modeItemThinking").classList.add("active");
+            } else if (aiMode === "chat") {
+                labelEl.innerText = "Mode: Chat";
+                iconEl.className = "fa-solid fa-comments me-1";
+                document.getElementById("modeItemChat").classList.add("active");
+            } else { // coding
+                aiMode = "coding";
+                labelEl.innerText = "Mode: Coding";
+                iconEl.className = "fa-solid fa-code me-1";
+                document.getElementById("modeItemCoding").classList.add("active");
+            }
+        }
+
+        function setAiMode(mode) {
+            aiMode = mode;
+            localStorage.setItem("SCRIPTFORGE_AI_MODE", aiMode);
+            updateAiModeUI();
+            
+            const modeNames = { coding: "💻 Coding Mode", thinking: "🧠 Thinking Mode", chat: "💬 General Chat" };
+            showToast("Active Mode: " + modeNames[mode], "fa-solid fa-sliders text-light");
+        }
 
         function updateModelDisplayBadge() {
             const shortName = selectedModel.split('/').pop();
@@ -1241,11 +1296,11 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             selectedModel = modelId;
             localStorage.setItem("ANTIGRAVITY_SELECTED_MODEL", selectedModel);
             updateModelDisplayBadge();
-            showToast("Selected Model: " + selectedModel.split('/').pop(), "fa-solid fa-brain text-light");
+            showToast("Selected Model: " + selectedModel.split('/').pop(), "fa-solid fa-robot text-light");
         }
 
         function clickUnconnectedModel(modelId, provider, modelName) {
-            const providerName = provider === "gemini" ? "Google Gemini" : "OpenRouter";
+            const providerName = provider === "gemini" ? "Google Gemini" : "OpenRouter (Unlocks Claude, GPT-4o, DeepSeek, Qwen)";
             document.getElementById("warningModalText").innerText = `The API key for ${providerName} is not connected yet. Please add your key in Settings to use ${modelName}.`;
             const modal = new bootstrap.Modal(document.getElementById("apiKeyWarningModal"));
             modal.show();
@@ -1891,7 +1946,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 <div class="message-content">
                     <div class="progress-box">
                         <i class="fa-solid fa-spinner fa-spin me-2"></i>
-                        <span>Forging code with ${escapeHtml(selectedModel.split('/').pop())}...</span>
+                        <span>Processing request with ${escapeHtml(selectedModel.split('/').pop())}...</span>
                     </div>
                 </div>
             `;
@@ -1910,6 +1965,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                         api_key: geminiApiKey,
                         openrouter_key: openrouterApiKey,
                         model: selectedModel,
+                        ai_mode: aiMode,
                         auto_execute: autoExecute,
                         auto_fix: autoFix,
                         history: historyForApi
@@ -2213,12 +2269,13 @@ def chat():
     req_key = data.get("api_key") or os.getenv("GEMINI_API_KEY", "") or gemini_api_key
     openrouter_key = data.get("openrouter_key") or os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
     selected_model = data.get("model", "gemini/gemini-2.5-flash")
+    ai_mode = data.get("ai_mode", "coding")
     
     auto_execute = data.get("auto_execute", False)
     auto_fix = data.get("auto_fix", True)
     history = data.get("history", [])
 
-    reply, err = generate_ai_response(prompt, selected_model, req_key, history, store["game_context"], openrouter_key=openrouter_key)
+    reply, err = generate_ai_response(prompt, selected_model, req_key, history, store["game_context"], openrouter_key=openrouter_key, ai_mode=ai_mode)
     
     if err:
         return jsonify({"error": f"AI Generation Error: {err}"}), 500
@@ -2346,7 +2403,7 @@ def report_error():
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
     selected_model = "gemini/gemini-2.5-flash"
 
-    reply, err = generate_ai_response(debug_prompt, selected_model, req_key, sess.get("history", []), store["game_context"], openrouter_key=openrouter_key)
+    reply, err = generate_ai_response(debug_prompt, selected_model, req_key, sess.get("history", []), store["game_context"], openrouter_key=openrouter_key, ai_mode="coding")
 
     if reply:
         fixed_code = extract_luau_code(reply)
