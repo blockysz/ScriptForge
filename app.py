@@ -263,8 +263,8 @@ HTML_TEMPLATE = r"""
     <meta name="twitter:title" content="ScriptForge | Roblox Executor AI Studio">
     <meta name="twitter:description" content="The ultimate AI script generator & real-time auto-fixer for Roblox executors (Solara, Wave, Delta, MacSploit). Write, run, and auto-debug Luau scripts live in your Roblox player session.">
 
-    <!-- Tab Favicon Exact Full Hammer Icon Matching Header Brand Logo -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%230a0a0a'/%3E%3Cpath fill='%23ffffff' d='M470.6 137.4c12.5-12.5 12.5-32.8 0-45.3l-96-96c-12.5-12.5-32.8-12.5-45.3 0l-22.6 22.6c-12.5 12.5-12.5 32.8 0 45.3l96 96c12.5 12.5 32.8 12.5 45.3 0l22.6-22.6zM228.3 268.4L356.1 140.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L183 223.1 82.6 122.7C70.1 110.2 49.9 110.2 37.4 122.7l-25.1 25.1c-12.5 12.5-12.5 32.8 0 45.3l100.4 100.4L12.3 393.9c-12.5 12.5-12.5 32.8 0 45.3l64 64c12.5 12.5 32.8 12.5 45.3 0l100.4-100.4 100.4 100.4c12.5 12.5 32.8 12.5 45.3 0l25.1-25.1c12.5-12.5 12.5-32.8 0-45.3L292.4 332.5l-64.1-64.1z'/%3E%3C/svg%3E">
+    <!-- Tab Favicon Exact FontAwesome 6 fa-solid fa-hammer Vector -->
+    <link id="tabFavicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%230a0a0a'/%3E%3Cpath fill='%23ffffff' transform='translate(40,40) scale(0.84)' d='M.3 133.4c-1.9 6.2-1.9 12.8 0 19L113.8 488.4c5.1 15.3 19.5 25.6 35.6 25.6s30.5-10.3 35.6-25.6l26.4-79.3 156.1-156.1c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L195.3 364.7l-40.7-13.6c-4.4-1.5-9.1-1.5-13.6 0l-37.1 12.4-51.7-155.1c-3.7-11.2-14.2-18.4-25.9-18.4H16c-8.8 0-16 7.2-16 16v127.4zm499-9.3l-96-96c-9.4-9.4-24.6-9.4-33.9 0l-22.6 22.6c-9.4 9.4-9.4 24.6 0 33.9l96 96c9.4 9.4 24.6 9.4 33.9 0l22.6-22.6c9.4-9.4 9.4-24.6 0-33.9z'/%3E%3C/svg%3E">
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -1240,6 +1240,47 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
     
     <script>
+        // Render 100% exact FontAwesome fa-solid fa-hammer icon directly to canvas for browser tab favicon
+        function generateFontAwesomeFavicon() {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 64;
+                canvas.height = 64;
+                const ctx = canvas.getContext('2d');
+                
+                // Draw dark rounded rect background
+                ctx.fillStyle = '#0a0a0a';
+                if (ctx.roundRect) {
+                    ctx.beginPath();
+                    ctx.roundRect(0, 0, 64, 64, 14);
+                    ctx.fill();
+                } else {
+                    ctx.fillRect(0, 0, 64, 64);
+                }
+
+                // Draw exact FontAwesome 6 fa-solid fa-hammer icon (\uf6e3)
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '900 36px "Font Awesome 6 Free"';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('\uf6e3', 32, 34);
+
+                const link = document.getElementById('tabFavicon') || document.createElement('link');
+                link.id = 'tabFavicon';
+                link.rel = 'icon';
+                link.type = 'image/png';
+                link.href = canvas.toDataURL('image/png');
+                document.head.appendChild(link);
+            } catch(e) {
+                console.error("Favicon rendering error:", e);
+            }
+        }
+
+        if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(generateFontAwesomeFavicon);
+        }
+        setTimeout(generateFontAwesomeFavicon, 500);
+
         // Account State
         let loggedInUser = localStorage.getItem("SCRIPTFORGE_USER") || null;
 
