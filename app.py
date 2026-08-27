@@ -16,19 +16,9 @@ if hasattr(sys.stderr, 'reconfigure'):
 app = Flask(__name__)
 CORS(app)
 
-# Global State
-game_context = {
-    "connected": False,
-    "last_seen": None,
-    "place_id": 0,
-    "player_name": "Disconnected",
-    "remotes": [],
-    "leaderstats": {},
-    "workspace_items": []
-}
-
-pending_scripts = []
-script_sessions = {}
+# Global Multi-Tenant State
+# Format: sessions_data[session_key] = { game_context, pending_scripts, script_sessions }
+sessions_data = {}
 game_name_cache = {}
 
 DEFAULT_API_KEY = "ollama"
@@ -40,6 +30,34 @@ current_selected_model = "ollama/qwen2.5-coder:latest"
 def handle_exception(e):
     """Ensure all server errors return clean JSON instead of HTML pages."""
     return jsonify({"error": str(e)}), 500
+
+def get_session_key(req):
+    """Extract secure session_key from header, query param, or JSON body."""
+    key = req.headers.get("X-Session-Key")
+    if not key:
+        key = req.args.get("session_key")
+    if not key and req.is_json:
+        data = req.get_json(silent=True) or {}
+        key = data.get("session_key")
+    return key or "default_session"
+
+def get_session_store(key):
+    """Get or initialize isolated session data for a given session_key."""
+    if key not in sessions_data:
+        sessions_data[key] = {
+            "game_context": {
+                "connected": False,
+                "last_seen": None,
+                "place_id": 0,
+                "player_name": "Disconnected",
+                "remotes": [],
+                "leaderstats": {},
+                "workspace_items": []
+            },
+            "pending_scripts": [],
+            "script_sessions": {}
+        }
+    return sessions_data[key]
 
 def fetch_game_name(place_id):
     """Fetch official Roblox game name by place ID with caching."""
@@ -73,14 +91,14 @@ def extract_luau_code(text):
     cleaned = "\n".join(code_lines).strip()
     return cleaned
 
-def call_openai_compatible(api_url, api_key, model_names, system_instruction, user_prompt, history=[]):
+def call_openai_compatible(api_url, api_key, model_names, system_instruction, user_prompt, history=[], game_ctx={}):
     """Call OpenAI compatible endpoints (OpenRouter / Ollama) with multi-model fallback."""
     if isinstance(model_names, str):
         models_to_try = [model_names]
     else:
         models_to_try = list(model_names)
 
-    messages = [{"role": "system", "content": f"{system_instruction}\n\n[LIVE ROBLOX GAME CONTEXT]\n{json.dumps(game_context, indent=2)}"}]
+    messages = [{"role": "system", "content": f"{system_instruction}\n\n[LIVE ROBLOX GAME CONTEXT]\n{json.dumps(game_ctx, indent=2)}"}]
     for item in history:
         r = item.get("role", "user")
         role = "assistant" if r in ["ai", "assistant", "model"] else "user"
@@ -117,10 +135,10 @@ def call_openai_compatible(api_url, api_key, model_names, system_instruction, us
 
     return None, last_err
 
-def call_gemini_api(api_key, system_instruction, user_prompt, history=[], target_model="gemini-3.6-flash"):
+def call_gemini_api(api_key, system_instruction, user_prompt, history=[], target_model="gemini-3.6-flash", game_ctx={}):
     """Call Google Gemini REST API with correct role mapping."""
     contents = []
-    full_system = f"{system_instruction}\n\n[LIVE ROBLOX GAME CONTEXT]\n{json.dumps(game_context, indent=2)}"
+    full_system = f"{system_instruction}\n\n[LIVE ROBLOX GAME CONTEXT]\n{json.dumps(game_ctx, indent=2)}"
     
     for item in history:
         raw_role = item.get("role", "user")
@@ -182,7 +200,7 @@ def call_gemini_api(api_key, system_instruction, user_prompt, history=[], target
 
     return None, last_err
 
-def generate_ai_response(user_prompt, selected_model, req_key, history=[]):
+def generate_ai_response(user_prompt, selected_model, req_key, history=[], game_ctx={}):
     """UNIFIED AI generation engine used for BOTH chat messages and auto-fixes."""
     system_instruction = """
     You are ScriptForge's expert Luau Scripting Assistant connected directly to a live Roblox game player session.
@@ -198,14 +216,14 @@ def generate_ai_response(user_prompt, selected_model, req_key, history=[]):
 
     if selected_model.startswith("ollama/") or "qwen" in selected_model or req_key == "ollama":
         model_name = selected_model.replace("ollama/", "")
-        return call_openai_compatible("http://localhost:11434/v1/chat/completions", "", model_name, system_instruction, user_prompt, history)
+        return call_openai_compatible("http://localhost:11434/v1/chat/completions", "", model_name, system_instruction, user_prompt, history, game_ctx)
     elif selected_model.startswith("openrouter/"):
         m_name = selected_model.replace("openrouter/", "")
         openrouter_models = [m_name, "dots-studio/dots-3-note-preview:free", "cohere/north-mini-code:free", "google/gemma-4-31b-it:free"]
-        return call_openai_compatible("https://openrouter.ai/api/v1/chat/completions", req_key, openrouter_models, system_instruction, user_prompt, history)
+        return call_openai_compatible("https://openrouter.ai/api/v1/chat/completions", req_key, openrouter_models, system_instruction, user_prompt, history, game_ctx)
     else:
         g_model = selected_model.replace("gemini/", "")
-        return call_gemini_api(req_key, system_instruction, user_prompt, history, target_model=g_model)
+        return call_gemini_api(req_key, system_instruction, user_prompt, history, target_model=g_model, game_ctx=game_ctx)
 
 HTML_TEMPLATE = r"""
 <!DOCTYPE html>
@@ -817,32 +835,35 @@ HTML_TEMPLATE = r"""
 
     <!-- Executor Loader Modal -->
     <div class="modal fade" id="executorModal" tabindex="-1">
-        <div class="modal-dialog modal-md">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content bg-dark text-light border-secondary">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title"><i class="fa-solid fa-plug text-light me-2"></i>Connect Roblox Executor</h5>
+                    <h5 class="modal-title"><i class="fa-solid fa-shield-halved text-light me-2"></i>Connect Roblox Executor (Unique Session Token)</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <p style="font-size: 0.88rem;" class="text-secondary">
-                        Copy and execute this 2-line loadstring in your executor (<strong class="text-light">Solara, Wave, Delta, MacSploit</strong>). The modal will <strong class="text-light">close automatically</strong> as soon as your game connects!
+                        Copy and execute your <strong class="text-light">unique multi-line session loadstring</strong> below in your executor (<strong class="text-light">Solara, Wave, Delta, MacSploit</strong>). Your session is protected by an isolated 32-character crypto key so no one else can hijack your executor session!
                     </p>
 
                     <div class="code-container my-3">
                         <div class="code-header">
-                            <span><i class="fa-solid fa-bolt me-1"></i> Quick Loadstring</span>
+                            <span><i class="fa-solid fa-key me-1"></i> Player-Specific Session Loadstring</span>
                             <div>
                                 <button class="btn btn-sm btn-light text-dark fw-bold py-0 px-2" style="font-size: 0.78rem;" onclick="copyExecutorScript()">
                                     <i class="fa-solid fa-copy me-1"></i> Copy Loadstring
                                 </button>
                             </div>
                         </div>
-                        <pre><code class="language-lua" id="executorScriptCode">getgenv().SCRIPTFORGE_URL = "${window.location.origin}"
+                        <pre><code class="language-lua" id="executorScriptCode">-- ScriptForge Unique Session Loader
+getgenv().SCRIPTFORGE_URL = "${window.location.origin}"
+getgenv().SESSION_KEY = "${getSessionKey()}"
+
 loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/main/roblox_client.lua"))()</code></pre>
                     </div>
 
                     <div class="p-2 bg-black rounded border border-secondary text-secondary" style="font-size: 0.8rem;">
-                        <i class="fa-solid fa-circle-info text-light me-1"></i> Auto-close active: Once executed in Roblox, this window will dismiss automatically.
+                        <i class="fa-solid fa-shield-cat text-light me-1"></i> <strong>Session Protection:</strong> Your unique Session Token ensures your Roblox client and AI chat session are 100% private and isolated.
                     </div>
                 </div>
                 <div class="modal-footer border-secondary">
@@ -889,6 +910,18 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
     
     <script>
+        // High-Entropy Player-Specific Session Key Generation
+        function getSessionKey() {
+            let key = localStorage.getItem("SCRIPTFORGE_SESSION_KEY");
+            if (!key) {
+                const arr = new Uint8Array(16);
+                window.crypto.getRandomValues(arr);
+                key = "sf_live_" + Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+                localStorage.setItem("SCRIPTFORGE_SESSION_KEY", key);
+            }
+            return key;
+        }
+
         let currentApiKey = localStorage.getItem("GEMINI_API_KEY") || "ollama";
         let selectedModel = localStorage.getItem("ANTIGRAVITY_SELECTED_MODEL") || "ollama/qwen2.5-coder:latest";
         let autoExecute = localStorage.getItem("ANTIGRAVITY_AUTO_EXECUTE") === "true";
@@ -967,10 +1000,11 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             showToast("Settings Saved!", "fa-solid fa-circle-check text-light");
         }
 
-        // Generate Ultra-Short GitHub loadstring for current domain
+        // Generate Formatted Multi-Line GitHub loadstring for current domain + unique Session Key
         function getFormattedExecutorScript() {
             const origin = window.location.origin;
-            return `getgenv().SCRIPTFORGE_URL = "${origin}"\nloadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/main/roblox_client.lua"))()`;
+            const key = getSessionKey();
+            return `-- ScriptForge Unique Session Loader\ngetgenv().SCRIPTFORGE_URL = "${origin}"\ngetgenv().SESSION_KEY = "${key}"\n\nloadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/main/roblox_client.lua"))()`;
         }
 
         function openExecutorModal() {
@@ -984,7 +1018,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         function copyExecutorScript() {
             const code = getFormattedExecutorScript();
             navigator.clipboard.writeText(code);
-            showToast("📋 Loadstring copied to clipboard!", "fa-solid fa-copy text-light");
+            showToast("📋 Session Loadstring copied to clipboard!", "fa-solid fa-copy text-light");
         }
 
         // Local Chat Storage Management
@@ -1262,7 +1296,8 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
         async function updateStatus() {
             try {
-                const res = await fetch('/api/status');
+                const sessionKey = getSessionKey();
+                const res = await fetch('/api/status?session_key=' + encodeURIComponent(sessionKey));
                 if (!res.ok) return;
                 const data = await res.json();
                 
@@ -1392,6 +1427,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
+                        session_key: getSessionKey(),
                         prompt: prompt,
                         api_key: currentApiKey,
                         model: selectedModel,
@@ -1446,7 +1482,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
             const pollInterval = setInterval(async () => {
                 try {
-                    const res = await fetch('/api/script_status/' + scriptId);
+                    const res = await fetch(`/api/script_status/${scriptId}?session_key=${encodeURIComponent(getSessionKey())}`);
                     if (!res.ok) return;
                     const statusData = await res.json();
 
@@ -1508,7 +1544,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 await fetch('/api/queue_script', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({code: code})
+                    body: JSON.stringify({session_key: getSessionKey(), code: code})
                 });
                 showToast("🚀 Script queued to Roblox Executor!", "fa-solid fa-rocket text-light");
             } catch(e) {
@@ -1549,9 +1585,12 @@ def set_key():
 @app.route("/api/status", methods=["GET"])
 def get_status():
     import time
-    is_connected = game_context.get("last_seen") and (time.time() - game_context["last_seen"] < 10)
-    game_context["connected"] = is_connected
-    return jsonify(game_context)
+    s_key = get_session_key(request)
+    store = get_session_store(s_key)
+    ctx = store["game_context"]
+    is_connected = ctx.get("last_seen") and (time.time() - ctx["last_seen"] < 10)
+    ctx["connected"] = is_connected
+    return jsonify(ctx)
 
 @app.route("/api/get_game_name/<place_id>", methods=["GET"])
 def get_game_name_route(place_id):
@@ -1582,9 +1621,11 @@ def generate_title_route():
 @app.route("/api/context", methods=["POST"])
 def update_context():
     import time
-    global game_context
     data = request.json or {}
-    game_context.update({
+    s_key = get_session_key(request)
+    store = get_session_store(s_key)
+    
+    store["game_context"].update({
         "connected": True,
         "last_seen": time.time(),
         "place_id": data.get("place_id", 0),
@@ -1597,8 +1638,11 @@ def update_context():
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
-    global pending_scripts, script_sessions, current_selected_model, current_api_key
+    global current_selected_model, current_api_key
     data = request.json or {}
+    s_key = get_session_key(request)
+    store = get_session_store(s_key)
+
     prompt = data.get("prompt", "")
     req_key = data.get("api_key") or gemini_api_key or DEFAULT_API_KEY
     selected_model = data.get("model", "ollama/qwen2.5-coder:latest")
@@ -1610,7 +1654,7 @@ def chat():
     auto_fix = data.get("auto_fix", True)
     history = data.get("history", [])
 
-    reply, err = generate_ai_response(prompt, selected_model, req_key, history)
+    reply, err = generate_ai_response(prompt, selected_model, req_key, history, store["game_context"])
     
     if err:
         return jsonify({"error": f"AI Generation Error: {err}"}), 500
@@ -1631,7 +1675,7 @@ def chat():
 
         testing_reply = f"⏳ **Testing and verifying script in Roblox Session...**"
 
-        script_sessions[script_id] = {
+        store["script_sessions"][script_id] = {
             "status": "verifying",
             "attempts": 0,
             "auto_fix": auto_fix,
@@ -1642,7 +1686,7 @@ def chat():
             "history": history
         }
 
-        pending_scripts.append({"id": script_id, "code": extracted_code})
+        store["pending_scripts"].append({"id": script_id, "code": extracted_code})
         status = "verifying"
 
         return jsonify({
@@ -1661,7 +1705,9 @@ def chat():
 
 @app.route("/api/script_status/<script_id>", methods=["GET"])
 def get_script_status(script_id):
-    sess = script_sessions.get(script_id)
+    s_key = get_session_key(request)
+    store = get_session_store(s_key)
+    sess = store["script_sessions"].get(script_id)
     if sess:
         return jsonify(sess)
     return jsonify({"error": "Script session not found"}), 404
@@ -1669,31 +1715,35 @@ def get_script_status(script_id):
 @app.route("/api/report_success", methods=["POST"])
 def report_success():
     """Client reports that the script executed cleanly with 0 errors."""
-    global script_sessions
     data = request.json or {}
+    s_key = get_session_key(request)
+    store = get_session_store(s_key)
     script_id = data.get("script_id")
     code = data.get("code", "")
 
-    sess = script_sessions.get(script_id)
+    sess = store["script_sessions"].get(script_id)
     if sess:
         sess["logs"].append("✅ Verification Passed: Script executed with 0 errors in game!")
         sess["status"] = "verified"
         sess["final_code"] = code
         sess["reply"] = f"✅ **Script Verified (0 Errors)**\n```luau\n{code}\n```"
-        print(f"[VERIFIED SUCCESS] Script [{script_id}] passed test with 0 errors!")
+        print(f"[VERIFIED SUCCESS] Session [{s_key}] Script [{script_id}] passed test with 0 errors!")
 
     return jsonify({"status": "acknowledged"})
 
 @app.route("/api/report_error", methods=["POST"])
 def report_error():
     """Agentic Self-Healing Auto-Fix Endpoint."""
-    global pending_scripts, script_sessions, current_selected_model, current_api_key
+    global current_selected_model, current_api_key
     data = request.json or {}
+    s_key = get_session_key(request)
+    store = get_session_store(s_key)
+
     script_id = data.get("script_id")
     failed_code = data.get("failed_code", "")
     error_msg = data.get("error_message", "Unknown runtime error")
 
-    sess = script_sessions.get(script_id)
+    sess = store["script_sessions"].get(script_id)
     if not sess:
         sess = {
             "status": "verifying",
@@ -1703,7 +1753,7 @@ def report_error():
             "reply": "",
             "history": []
         }
-        script_sessions[script_id] = sess
+        store["script_sessions"][script_id] = sess
 
     attempts = sess.get("attempts", 0) + 1
     sess["attempts"] = attempts
@@ -1717,7 +1767,7 @@ def report_error():
         return jsonify({"status": "max_attempts_reached"}), 400
 
     sess["logs"].append(f"🔧 Auto-Fixing Error... (Attempt {attempts}/3)...")
-    print(f"[AUTO-FIX LOOP] Script [{script_id}] failed! Attempt {attempts}/3. Sending error trace back to AI...")
+    print(f"[AUTO-FIX LOOP] Session [{s_key}] Script [{script_id}] failed! Attempt {attempts}/3. Sending error trace back to AI...")
 
     debug_prompt = f"""
     The previous Luau script failed in the Roblox engine with the following error:
@@ -1733,13 +1783,13 @@ def report_error():
     Please fix all errors in this code and return the corrected script inside a ```luau ... ``` code block.
     """
 
-    reply, err = generate_ai_response(debug_prompt, current_selected_model, current_api_key, sess.get("history", []))
+    reply, err = generate_ai_response(debug_prompt, current_selected_model, current_api_key, sess.get("history", []), store["game_context"])
 
     if reply:
         fixed_code = extract_luau_code(reply)
         if fixed_code:
             sess["logs"].append(f"🚀 Queued fixed script (Attempt {attempts}/3) for verification...")
-            pending_scripts.append({"id": script_id, "code": fixed_code})
+            store["pending_scripts"].append({"id": script_id, "code": fixed_code})
             print(f"[AUTO-FIX RE-QUEUED] Script [{script_id}] re-queued.")
             return jsonify({"status": "auto_fixed", "new_code": fixed_code, "attempt": attempts})
 
@@ -1753,20 +1803,24 @@ def get_autofix_logs():
 
 @app.route("/api/queue_script", methods=["POST"])
 def queue_script():
-    global pending_scripts
     data = request.json or {}
+    s_key = get_session_key(request)
+    store = get_session_store(s_key)
+
     code = data.get("code")
     if code:
         script_id = f"manual_{int(time.time()*1000)}"
-        pending_scripts.append({"id": script_id, "code": code})
+        store["pending_scripts"].append({"id": script_id, "code": code})
         return jsonify({"status": "queued"})
     return jsonify({"error": "No code provided"}), 400
 
 @app.route("/api/pending_script", methods=["GET"])
 def get_pending_script():
-    global pending_scripts
-    if pending_scripts:
-        item = pending_scripts.pop(0)
+    s_key = get_session_key(request)
+    store = get_session_store(s_key)
+
+    if store["pending_scripts"]:
+        item = store["pending_scripts"].pop(0)
         return jsonify({"has_script": True, "script_id": item["id"], "code": item["code"]})
     return jsonify({"has_script": False, "code": "", "script_id": ""})
 

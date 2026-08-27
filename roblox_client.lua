@@ -2,6 +2,7 @@
 -- Hosted on GitHub: blockysz/ScriptForge
 
 local SERVER_URL = getgenv().SCRIPTFORGE_URL or "http://localhost:5000"
+local SESSION_KEY = getgenv().SESSION_KEY or "default_session"
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -12,6 +13,7 @@ local LocalPlayer = Players.LocalPlayer
 print("==================================================")
 print(" 🔨 ScriptForge AI Studio Client Loaded!")
 print(" Target Domain: " .. SERVER_URL)
+print(" Session Token: " .. SESSION_KEY)
 print("==================================================")
 
 local requestFunc = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
@@ -42,6 +44,7 @@ local function getGameContext()
     end
 
     return {
+        session_key = SESSION_KEY,
         place_id = game.PlaceId,
         player_name = LocalPlayer.Name,
         remotes = remotes,
@@ -55,7 +58,10 @@ local function syncContext()
         requestFunc({
             Url = SERVER_URL .. "/api/context",
             Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["X-Session-Key"] = SESSION_KEY
+            },
             Body = HttpService:JSONEncode(getGameContext())
         })
     end)
@@ -64,8 +70,11 @@ end
 local function checkPendingScripts()
     local success, response = pcall(function()
         return requestFunc({
-            Url = SERVER_URL .. "/api/pending_script",
-            Method = "GET"
+            Url = SERVER_URL .. "/api/pending_script?session_key=" .. HttpService:UrlEncode(SESSION_KEY),
+            Method = "GET",
+            Headers = {
+                ["X-Session-Key"] = SESSION_KEY
+            }
         })
     end)
 
@@ -79,8 +88,12 @@ local function checkPendingScripts()
                 requestFunc({
                     Url = SERVER_URL .. "/api/report_error",
                     Method = "POST",
-                    Headers = {["Content-Type"] = "application/json"},
+                    Headers = {
+                        ["Content-Type"] = "application/json",
+                        ["X-Session-Key"] = SESSION_KEY
+                    },
                     Body = HttpService:JSONEncode({
+                        session_key = SESSION_KEY,
                         script_id = data.script_id,
                         failed_code = data.code,
                         error_message = "Syntax/Compile Error: " .. tostring(compileErr)
@@ -95,8 +108,12 @@ local function checkPendingScripts()
                     requestFunc({
                         Url = SERVER_URL .. "/api/report_success",
                         Method = "POST",
-                        Headers = {["Content-Type"] = "application/json"},
+                        Headers = {
+                            ["Content-Type"] = "application/json",
+                            ["X-Session-Key"] = SESSION_KEY
+                        },
                         Body = HttpService:JSONEncode({
+                            session_key = SESSION_KEY,
                             script_id = data.script_id,
                             code = data.code
                         })
@@ -105,8 +122,12 @@ local function checkPendingScripts()
                     requestFunc({
                         Url = SERVER_URL .. "/api/report_error",
                         Method = "POST",
-                        Headers = {["Content-Type"] = "application/json"},
+                        Headers = {
+                            ["Content-Type"] = "application/json",
+                            ["X-Session-Key"] = SESSION_KEY
+                        },
                         Body = HttpService:JSONEncode({
+                            session_key = SESSION_KEY,
                             script_id = data.script_id,
                             failed_code = data.code,
                             error_message = "Runtime Error: " .. tostring(runtimeErr)
