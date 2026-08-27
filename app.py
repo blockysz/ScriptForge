@@ -3,6 +3,8 @@ import sys
 import json
 import re
 import time
+import hashlib
+import secrets
 import urllib.request
 import urllib.parse
 from flask import Flask, request, jsonify, render_template_string
@@ -15,6 +17,27 @@ if hasattr(sys.stderr, 'reconfigure'):
 
 app = Flask(__name__)
 CORS(app)
+
+# Persistent Accounts & Data Storage File
+ACCOUNTS_FILE = os.path.join(os.path.dirname(__file__), "accounts.json")
+
+def load_accounts():
+    """Load user accounts safely from JSON database on disk."""
+    if os.path.exists(ACCOUNTS_FILE):
+        try:
+            with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[ACCOUNTS] Error loading accounts file: {e}")
+    return {}
+
+def save_accounts(accounts):
+    """Save user accounts safely to JSON database on disk."""
+    try:
+        with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(accounts, f, indent=2)
+    except Exception as e:
+        print(f"[ACCOUNTS] Error saving accounts file: {e}")
 
 # Global Multi-Tenant State
 # Format: sessions_data[session_key] = { game_context, pending_scripts, script_sessions }
@@ -30,6 +53,18 @@ current_selected_model = "ollama/qwen2.5-coder:latest"
 def handle_exception(e):
     """Ensure all server errors return clean JSON instead of HTML pages."""
     return jsonify({"error": str(e)}), 500
+
+def hash_password(password, salt=None):
+    """Safely hash password using PBKDF2 HMAC SHA-256 with 100,000 iterations."""
+    if not salt:
+        salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
+    return key.hex(), salt
+
+def verify_password(password, stored_hash, salt):
+    """Verify password against stored PBKDF2 hash."""
+    key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
+    return key.hex() == stored_hash
 
 def get_session_key(req):
     """Extract secure session_key from header, query param, or JSON body."""
@@ -746,6 +781,10 @@ HTML_TEMPLATE = r"""
         </div>
 
         <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-sm btn-outline-light fw-bold" onclick="openAuthModal()" id="authHeaderBtn">
+                <i class="fa-solid fa-user me-1"></i> Account
+            </button>
+
             <button class="btn btn-sm btn-outline-light fw-bold" onclick="openExecutorModal()" title="Get Executor Client Script">
                 <i class="fa-solid fa-plug me-1"></i> Connect Executor
             </button>
@@ -833,6 +872,81 @@ HTML_TEMPLATE = r"""
         </div>
     </div>
 
+    <!-- Account / Login / Register Modal -->
+    <div class="modal fade" id="authModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark text-light border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title" id="authModalTitle"><i class="fa-solid fa-user me-2"></i>Account Access</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Logged Out View -->
+                    <div id="authLoggedOutView">
+                        <ul class="nav nav-pills nav-justified mb-3" id="authTabs" role="tablist">
+                            <li class="nav-item">
+                                <button class="nav-link active bg-secondary text-light fw-bold me-1" id="loginTabBtn" onclick="switchAuthTab('login')">Log In</button>
+                            </li>
+                            <li class="nav-item">
+                                <button class="nav-link bg-dark text-secondary fw-bold border border-secondary" id="registerTabBtn" onclick="switchAuthTab('register')">Register</button>
+                            </li>
+                        </ul>
+
+                        <!-- Login Form -->
+                        <div id="loginForm">
+                            <div class="mb-3">
+                                <label class="form-label text-secondary" style="font-size: 0.85rem;">Username</label>
+                                <input type="text" id="loginUsername" class="form-control bg-black text-light border-secondary" placeholder="Enter username">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label text-secondary" style="font-size: 0.85rem;">Password</label>
+                                <input type="password" id="loginPassword" class="form-control bg-black text-light border-secondary" placeholder="Enter password">
+                            </div>
+                            <button class="btn btn-light w-100 fw-bold text-dark" onclick="submitLogin()"><i class="fa-solid fa-right-to-bracket me-1"></i> Log In</button>
+                        </div>
+
+                        <!-- Register Form -->
+                        <div id="registerForm" style="display: none;">
+                            <div class="mb-3">
+                                <label class="form-label text-secondary" style="font-size: 0.85rem;">Username</label>
+                                <input type="text" id="regUsername" class="form-control bg-black text-light border-secondary" placeholder="Choose a username">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label text-secondary" style="font-size: 0.85rem;">Password</label>
+                                <input type="password" id="regPassword" class="form-control bg-black text-light border-secondary" placeholder="Create a password">
+                            </div>
+                            <button class="btn btn-light w-100 fw-bold text-dark" onclick="submitRegister()"><i class="fa-solid fa-user-plus me-1"></i> Create Account</button>
+                        </div>
+                    </div>
+
+                    <!-- Logged In View -->
+                    <div id="authLoggedInView" style="display: none;">
+                        <div class="text-center py-3">
+                            <div class="avatar avatar-user mx-auto mb-2" style="width: 48px; height: 48px; font-size: 1.4rem;">
+                                <i class="fa-solid fa-user-check text-light"></i>
+                            </div>
+                            <h5 class="fw-bold text-light mb-1" id="accountNameDisplay">Logged In User</h5>
+                            <p class="text-secondary" style="font-size: 0.82rem;">Global Cloud Account Synced</p>
+                        </div>
+
+                        <div class="p-3 bg-black rounded border border-secondary mb-3" style="font-size: 0.82rem;">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span class="text-secondary">Session Token:</span>
+                                <span class="font-monospace text-light text-truncate" id="accountTokenDisplay" style="max-width: 180px;">-</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span class="text-secondary">Cloud Sync:</span>
+                                <span class="text-light fw-bold"><i class="fa-solid fa-cloud-arrow-up me-1"></i> Active</span>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-outline-danger w-100 fw-bold" onclick="submitLogout()"><i class="fa-solid fa-right-from-bracket me-1"></i> Log Out</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Executor Loader Modal -->
     <div class="modal fade" id="executorModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -910,6 +1024,9 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
     
     <script>
+        // Account State
+        let loggedInUser = localStorage.getItem("SCRIPTFORGE_USER") || null;
+
         // High-Entropy Player-Specific Session Key Generation
         function getSessionKey() {
             let key = localStorage.getItem("SCRIPTFORGE_SESSION_KEY");
@@ -935,12 +1052,151 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
         document.documentElement.setAttribute("data-bs-theme", currentTheme);
         updateThemeIcon();
+        updateAuthHeaderBtn();
 
         document.getElementById("apiKeyInput").value = currentApiKey;
         document.getElementById("modalModelSelector").value = selectedModel;
         document.getElementById("bottomModelBadge").innerText = selectedModel.split('/')[1] || selectedModel;
         
         updateTogglePillsUI();
+
+        function updateAuthHeaderBtn() {
+            const btn = document.getElementById("authHeaderBtn");
+            if (loggedInUser) {
+                btn.innerHTML = `<i class="fa-solid fa-user-check me-1"></i> ${escapeHtml(loggedInUser)}`;
+            } else {
+                btn.innerHTML = `<i class="fa-solid fa-user me-1"></i> Account`;
+            }
+        }
+
+        function openAuthModal() {
+            if (loggedInUser) {
+                document.getElementById("authLoggedOutView").style.display = "none";
+                document.getElementById("authLoggedInView").style.display = "block";
+                document.getElementById("accountNameDisplay").innerText = loggedInUser;
+                document.getElementById("accountTokenDisplay").innerText = getSessionKey();
+            } else {
+                document.getElementById("authLoggedOutView").style.display = "block";
+                document.getElementById("authLoggedInView").style.display = "none";
+            }
+            const modal = new bootstrap.Modal(document.getElementById("authModal"));
+            modal.show();
+        }
+
+        function switchAuthTab(tab) {
+            const loginBtn = document.getElementById("loginTabBtn");
+            const regBtn = document.getElementById("registerTabBtn");
+            const loginForm = document.getElementById("loginForm");
+            const regForm = document.getElementById("registerForm");
+
+            if (tab === 'login') {
+                loginBtn.className = "nav-link active bg-secondary text-light fw-bold me-1";
+                regBtn.className = "nav-link bg-dark text-secondary fw-bold border border-secondary";
+                loginForm.style.display = "block";
+                regForm.style.display = "none";
+            } else {
+                regBtn.className = "nav-link active bg-secondary text-light fw-bold";
+                loginBtn.className = "nav-link bg-dark text-secondary fw-bold border border-secondary me-1";
+                regForm.style.display = "block";
+                loginForm.style.display = "none";
+            }
+        }
+
+        async function submitLogin() {
+            const user = document.getElementById("loginUsername").value.trim();
+            const pass = document.getElementById("loginPassword").value.trim();
+            if (!user || !pass) {
+                showToast("Please enter username and password", "fa-solid fa-circle-exclamation text-secondary");
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username: user, password: pass })
+                });
+
+                const data = await res.json();
+                if (data.error) {
+                    showToast("Login Failed: " + data.error, "fa-solid fa-circle-exclamation text-secondary");
+                } else {
+                    loggedInUser = data.user.username;
+                    localStorage.setItem("SCRIPTFORGE_USER", loggedInUser);
+                    if (data.user.session_key) {
+                        localStorage.setItem("SCRIPTFORGE_SESSION_KEY", data.user.session_key);
+                    }
+                    if (data.user.chats && data.user.chats.length > 0) {
+                        chats = data.user.chats;
+                        activeChatId = chats[0].id;
+                        saveChatsToStorage();
+                        renderChatList();
+                        renderActiveChat();
+                    }
+                    updateAuthHeaderBtn();
+                    bootstrap.Modal.getInstance(document.getElementById("authModal")).hide();
+                    showToast(`Welcome back, ${loggedInUser}!`, "fa-solid fa-circle-check text-light");
+                }
+            } catch(e) {
+                showToast("Connection error: " + e.message, "fa-solid fa-circle-exclamation text-secondary");
+            }
+        }
+
+        async function submitRegister() {
+            const user = document.getElementById("regUsername").value.trim();
+            const pass = document.getElementById("regPassword").value.trim();
+            if (!user || !pass) {
+                showToast("Please choose a username and password", "fa-solid fa-circle-exclamation text-secondary");
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username: user, password: pass, session_key: getSessionKey() })
+                });
+
+                const data = await res.json();
+                if (data.error) {
+                    showToast("Registration Error: " + data.error, "fa-solid fa-circle-exclamation text-secondary");
+                } else {
+                    loggedInUser = data.user.username;
+                    localStorage.setItem("SCRIPTFORGE_USER", loggedInUser);
+                    updateAuthHeaderBtn();
+                    bootstrap.Modal.getInstance(document.getElementById("authModal")).hide();
+                    showToast(`Account created! Welcome ${loggedInUser}`, "fa-solid fa-circle-check text-light");
+                    syncChatsToCloud();
+                }
+            } catch(e) {
+                showToast("Connection error: " + e.message, "fa-solid fa-circle-exclamation text-secondary");
+            }
+        }
+
+        function submitLogout() {
+            loggedInUser = null;
+            localStorage.removeItem("SCRIPTFORGE_USER");
+            updateAuthHeaderBtn();
+            bootstrap.Modal.getInstance(document.getElementById("authModal")).hide();
+            showToast("Logged out of account", "fa-solid fa-circle-info text-secondary");
+        }
+
+        async function syncChatsToCloud() {
+            if (!loggedInUser) return;
+            try {
+                await fetch('/api/auth/sync_chats', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: loggedInUser,
+                        session_key: getSessionKey(),
+                        chats: chats
+                    })
+                });
+            } catch(e) {
+                console.error("Cloud sync error:", e);
+            }
+        }
 
         function updateTogglePillsUI() {
             const execPill = document.getElementById("autoExecPill");
@@ -1034,6 +1290,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         function saveChatsToStorage() {
             localStorage.setItem("SCRIPTFORGE_CHATS", JSON.stringify(chats));
             localStorage.setItem("SCRIPTFORGE_ACTIVE_CHAT", activeChatId);
+            syncChatsToCloud();
         }
 
         function createNewChat(switchChat = true) {
@@ -1573,6 +1830,94 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 @app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
+
+# Authentication Endpoints
+@app.route("/api/auth/register", methods=["POST"])
+def auth_register():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    session_key = data.get("session_key", "")
+
+    if not username or len(username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters"}), 400
+    if not password or len(password) < 4:
+        return jsonify({"error": "Password must be at least 4 characters"}), 400
+
+    accounts = load_accounts()
+    user_key = username.lower()
+    if user_key in accounts:
+        return jsonify({"error": "Username already taken"}), 400
+
+    pwd_hash, salt = hash_password(password)
+    
+    if not session_key:
+        session_key = f"sf_live_{secrets.token_hex(16)}"
+
+    accounts[user_key] = {
+        "username": username,
+        "password_hash": pwd_hash,
+        "salt": salt,
+        "session_key": session_key,
+        "created_at": time.time(),
+        "chats": []
+    }
+    save_accounts(accounts)
+
+    return jsonify({
+        "status": "ok",
+        "user": {
+            "username": username,
+            "session_key": session_key,
+            "chats": []
+        }
+    })
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+
+    if not username or not password:
+        return jsonify({"error": "Username and password required"}), 400
+
+    accounts = load_accounts()
+    user_key = username.lower()
+    user_data = accounts.get(user_key)
+
+    if not user_data:
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    if not verify_password(password, user_data["password_hash"], user_data["salt"]):
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    return jsonify({
+        "status": "ok",
+        "user": {
+            "username": user_data["username"],
+            "session_key": user_data.get("session_key", f"sf_live_{secrets.token_hex(16)}"),
+            "chats": user_data.get("chats", [])
+        }
+    })
+
+@app.route("/api/auth/sync_chats", methods=["POST"])
+def sync_chats_cloud():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    chats = data.get("chats", [])
+
+    if not username:
+        return jsonify({"status": "ignored"})
+
+    accounts = load_accounts()
+    user_key = username.lower()
+    if user_key in accounts:
+        accounts[user_key]["chats"] = chats
+        save_accounts(accounts)
+        return jsonify({"status": "synced"})
+
+    return jsonify({"error": "User not found"}), 404
 
 @app.route("/api/set_key", methods=["POST"])
 def set_key():
