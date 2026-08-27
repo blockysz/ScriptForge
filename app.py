@@ -631,17 +631,20 @@ HTML_TEMPLATE = r"""
             border-color: var(--text-primary);
         }
 
+        /* Fix Textarea to eliminate scrollbar arrows completely */
         .input-box textarea {
             flex: 1;
             background: transparent;
             border: none;
             color: var(--text-primary);
-            resize: none;
+            resize: none !important;
             height: 24px;
             max-height: 120px;
             outline: none;
             font-size: 0.95rem;
             line-height: 1.4;
+            overflow-y: hidden !important;
+            overflow-x: hidden !important;
         }
 
         .send-btn {
@@ -814,10 +817,13 @@ HTML_TEMPLATE = r"""
                     <i class="fa-solid fa-plus me-2"></i> New chat
                 </button>
 
-                <div class="input-group input-group-sm mb-2">
-                    <span class="input-group-text bg-black text-secondary border-secondary"><i class="fa-solid fa-magnifying-glass"></i></span>
-                    <input type="text" id="chatSearchInput" name="chat_search_query" autocomplete="off" class="form-control bg-black text-light border-secondary" placeholder="Search chats & messages..." oninput="renderChatList()">
-                </div>
+                <!-- Form wrapper with readonly anti-autofill trick to permanently prevent Chrome autofill -->
+                <form autocomplete="off" action="javascript:void(0);" class="m-0 p-0">
+                    <div class="input-group input-group-sm mb-2">
+                        <span class="input-group-text bg-black text-secondary border-secondary"><i class="fa-solid fa-magnifying-glass"></i></span>
+                        <input type="search" id="chatSearchInput" name="sf_search_q_noautofill" autocomplete="chrome-off" readonly onfocus="this.removeAttribute('readonly');" class="form-control bg-black text-light border-secondary" placeholder="Search chats & messages..." oninput="renderChatList()">
+                    </div>
+                </form>
 
                 <select id="gameFilterSelect" class="form-select form-select-sm bg-black text-light border-secondary" onchange="renderChatList()">
                     <option value="all">🎮 All Games</option>
@@ -852,24 +858,24 @@ HTML_TEMPLATE = r"""
 
                 <div class="input-box">
                     <textarea id="userInput" placeholder="Ask ScriptForge to write a Luau script for your game..." oninput="autoGrow(this)" onkeydown="handleKeyDown(event)"></textarea>
+
+                    <!-- Subtle, Minimal Gray Mode Selector Dropup Button Next to Send Button -->
+                    <div class="dropup d-inline-block me-1" id="modeInputDropup">
+                        <button class="btn btn-sm text-secondary border-0 p-0 shadow-none d-flex align-items-center gap-1 dropdown-toggle" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" style="background: transparent; font-size: 0.76rem; color: #777777; cursor: pointer; border-radius: 4px;">
+                            <i class="fa-solid fa-code" id="modePillIcon" style="font-size: 0.72rem; color: #777777;"></i> <span id="modePillLabel" style="font-size: 0.76rem; color: #777777;">coding</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-dark shadow border-secondary py-1" style="font-size: 0.75rem; min-width: 130px; background: #141414 !important; border: 1px solid #282828 !important;">
+                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.75rem; color: #aaaaaa !important;" href="#" id="modeItemCoding" onclick="setAiMode('coding')">coding mode</a></li>
+                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.75rem; color: #777777 !important;" href="#" id="modeItemThinking" onclick="setAiMode('thinking')">thinking mode</a></li>
+                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.75rem; color: #777777 !important;" href="#" id="modeItemChat" onclick="setAiMode('chat')">general chat</a></li>
+                        </ul>
+                    </div>
+
                     <button class="send-btn" id="sendBtn" onclick="sendMessage()"><i class="fa-solid fa-arrow-up"></i></button>
                 </div>
 
                 <div class="bottom-toggles-bar">
                     <div class="toggle-group align-items-center">
-                        <!-- AI Mode Selector Dropup Pill Button with static CSS positioning -->
-                        <div class="dropup d-inline-block" id="modeDropup">
-                            <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" style="cursor: pointer;">
-                                <i class="fa-solid fa-code me-1" id="modePillIcon"></i> <span id="modePillLabel">Mode: Coding</span>
-                            </div>
-                            <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary" style="font-size: 0.84rem; min-width: 240px;">
-                                <li><h6 class="dropdown-header text-white fw-bold font-monospace">SELECT AI MODE</h6></li>
-                                <li><a class="dropdown-item py-2 fw-bold active" href="#" id="modeItemCoding" onclick="setAiMode('coding')">Coding Mode (Default)</a></li>
-                                <li><a class="dropdown-item py-2 fw-bold" href="#" id="modeItemThinking" onclick="setAiMode('thinking')">Thinking Mode</a></li>
-                                <li><a class="dropdown-item py-2 fw-bold" href="#" id="modeItemChat" onclick="setAiMode('chat')">General Chat</a></li>
-                            </ul>
-                        </div>
-
                         <div class="custom-toggle-pill" id="autoExecPill" onclick="toggleAutoExecute()">
                             <span class="toggle-knob"></span>
                             <span><i class="fa-solid fa-bolt me-1"></i> Auto-Run</span>
@@ -1136,21 +1142,24 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             const labelEl = document.getElementById("modePillLabel");
             const iconEl = document.getElementById("modePillIcon");
             
-            document.querySelectorAll("#modeDropup .dropdown-item").forEach(item => item.classList.remove("active"));
+            document.querySelectorAll("#modeInputDropup .dropdown-item").forEach(item => item.style.fontWeight = "normal");
 
             if (aiMode === "thinking") {
-                labelEl.innerText = "Mode: Thinking";
-                iconEl.className = "fa-solid fa-brain me-1";
-                document.getElementById("modeItemThinking").classList.add("active");
+                labelEl.innerText = "thinking";
+                iconEl.className = "fa-solid fa-brain";
+                const el = document.getElementById("modeItemThinking");
+                if (el) el.style.fontWeight = "600";
             } else if (aiMode === "chat") {
-                labelEl.innerText = "Mode: Chat";
-                iconEl.className = "fa-solid fa-comments me-1";
-                document.getElementById("modeItemChat").classList.add("active");
+                labelEl.innerText = "chat";
+                iconEl.className = "fa-solid fa-comments";
+                const el = document.getElementById("modeItemChat");
+                if (el) el.style.fontWeight = "600";
             } else {
                 aiMode = "coding";
-                labelEl.innerText = "Mode: Coding";
-                iconEl.className = "fa-solid fa-code me-1";
-                document.getElementById("modeItemCoding").classList.add("active");
+                labelEl.innerText = "coding";
+                iconEl.className = "fa-solid fa-code";
+                const el = document.getElementById("modeItemCoding");
+                if (el) el.style.fontWeight = "600";
             }
         }
 
@@ -1159,8 +1168,8 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             localStorage.setItem("SCRIPTFORGE_AI_MODE", aiMode);
             updateAiModeUI();
             
-            const modeNames = { coding: "Coding Mode", thinking: "Thinking Mode", chat: "General Chat" };
-            showToast("Active Mode: " + modeNames[mode], "fa-solid fa-sliders text-light");
+            const modeNames = { coding: "coding mode", thinking: "thinking mode", chat: "general chat" };
+            showToast("Mode: " + modeNames[mode], "fa-solid fa-sliders text-light");
         }
 
         function getCleanModelName(id) {
