@@ -95,7 +95,6 @@ def save_accounts(accounts):
 sessions_data = {}
 game_name_cache = {}
 
-gemini_api_key = os.getenv("GEMINI_API_KEY", "")
 openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
 
 @app.errorhandler(Exception)
@@ -211,65 +210,8 @@ def call_openai_compatible(api_url, api_key, model_name, system_instruction, use
     except Exception as e:
         return None, str(e)
 
-def call_gemini_api(api_key, system_instruction, user_prompt, history=[], target_model="gemini-2.5-flash", game_ctx={}):
-    """Call Google Gemini REST API."""
-    if not api_key:
-        return None, "Gemini API Key is missing. Please add your key in Settings."
-
-    contents = []
-    full_system = f"{system_instruction}\n\n[LIVE ROBLOX GAME CONTEXT]\n{json.dumps(game_ctx, indent=2)}"
-    
-    for item in history:
-        raw_role = item.get("role", "user")
-        g_role = "model" if raw_role in ["ai", "assistant", "model"] else "user"
-        contents.append({
-            "role": g_role,
-            "parts": [{"text": item.get("content", "")}]
-        })
-        
-    contents.append({
-        "role": "user",
-        "parts": [{"text": f"[System Context: {full_system}]\n\nUser Question: {user_prompt}"}]
-    })
-
-    payload = {
-        "contents": contents,
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 8192
-        }
-    }
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-        }
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            res_data = json.loads(resp.read().decode("utf-8"))
-            candidates = res_data.get("candidates", [])
-            if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
-                text = "".join([p["text"] for p in parts if "text" in p and not p.get("thought", False)])
-                if not text and parts:
-                    text = parts[-1].get("text", "")
-                if text:
-                    return text, None
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8")
-        return None, f"HTTP {e.code}: {err_body}"
-    except Exception as e:
-        return None, str(e)
-
-    return None, "No candidate response returned from Gemini API"
-
-def generate_ai_response(user_prompt, selected_model, req_key, history=[], game_ctx={}, openrouter_key="", ai_mode="coding"):
-    """UNIFIED AI generation engine with AI Modes (Coding, Thinking, Chat)."""
+def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, openrouter_key="", ai_mode="coding"):
+    """UNIFIED AI generation engine powering all models strictly through OpenRouter."""
     
     if ai_mode == "thinking":
         system_instruction = """
@@ -292,16 +234,11 @@ def generate_ai_response(user_prompt, selected_model, req_key, history=[], game_
         Use exact Remote names, leaderstats, and workspace paths from live context.
         """
 
-    print(f"[AI PIPELINE] Generating response using model: {selected_model} (Mode: {ai_mode})")
+    m_name = selected_model.replace("openrouter/", "")
+    key = openrouter_key or os.getenv("OPENROUTER_API_KEY", "")
+    print(f"[AI PIPELINE] Generating response via OpenRouter: {m_name} (Mode: {ai_mode})")
 
-    if selected_model.startswith("openrouter/"):
-        m_name = selected_model.replace("openrouter/", "")
-        key = openrouter_key or os.getenv("OPENROUTER_API_KEY", "")
-        return call_openai_compatible("https://openrouter.ai/api/v1/chat/completions", key, m_name, system_instruction, user_prompt, history, game_ctx)
-    else:
-        g_model = selected_model.replace("gemini/", "")
-        key = req_key or os.getenv("GEMINI_API_KEY", "")
-        return call_gemini_api(key, system_instruction, user_prompt, history, target_model=g_model, game_ctx=game_ctx)
+    return call_openai_compatible("https://openrouter.ai/api/v1/chat/completions", key, m_name, system_instruction, user_prompt, history, game_ctx)
 
 HTML_TEMPLATE = r"""
 <!DOCTYPE html>
@@ -311,23 +248,23 @@ HTML_TEMPLATE = r"""
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ScriptForge | Live Roblox AI Studio</title>
     
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23121212'/><path d='M25 65 L75 65 L70 50 L30 50 Z M40 50 L40 35 L60 35 L60 50 Z' fill='%23ffffff'/><polygon points='52 20 38 48 50 48 44 75 62 42 50 42' fill='%23ffffff'/></svg>">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230a0a0a'/><path d='M25 65 L75 65 L70 50 L30 50 Z M40 50 L40 35 L60 35 L60 50 Z' fill='%23ffffff'/><polygon points='52 20 38 48 50 48 44 75 62 42 50 42' fill='%23ffffff'/></svg>">
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github-dark.min.css" id="highlightTheme">
     <style>
         :root {
-            --bg-main: #121212;
-            --bg-sidebar: #1a1a1a;
-            --bg-card: #262626;
-            --border-color: #333333;
-            --text-primary: #f5f5f5;
-            --text-secondary: #aaaaaa;
+            --bg-main: #0a0a0a;
+            --bg-sidebar: #111111;
+            --bg-card: #181818;
+            --border-color: #262626;
+            --text-primary: #f0f0f0;
+            --text-secondary: #888888;
             --accent: #ffffff;
             --accent-hover: #e0e0e0;
             --btn-text: #000000;
-            --input-bg: #222222;
+            --input-bg: #141414;
         }
 
         [data-bs-theme="light"] {
@@ -364,7 +301,7 @@ HTML_TEMPLATE = r"""
             background-color: var(--bg-sidebar);
             color: var(--text-primary);
             border: 1px solid var(--border-color);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
             padding: 12px 24px;
             border-radius: 30px;
             font-size: 0.88rem;
@@ -413,12 +350,12 @@ HTML_TEMPLATE = r"""
         }
 
         .status-online {
-            background-color: rgba(255, 255, 255, 0.1);
+            background-color: rgba(255, 255, 255, 0.08);
             color: var(--text-primary);
         }
 
         .status-offline {
-            background-color: rgba(120, 120, 120, 0.1);
+            background-color: rgba(100, 100, 100, 0.08);
             color: var(--text-secondary);
         }
 
@@ -428,7 +365,7 @@ HTML_TEMPLATE = r"""
             border-radius: 50%;
         }
         .dot-online { background-color: #ffffff; box-shadow: 0 0 6px #ffffff; }
-        .dot-offline { background-color: #777777; }
+        .dot-offline { background-color: #666666; }
 
         .main-container {
             display: flex;
@@ -684,7 +621,7 @@ HTML_TEMPLATE = r"""
             display: flex;
             align-items: center;
             gap: 10px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
             transition: border-color 0.2s;
             width: 100%;
             box-sizing: border-box;
@@ -750,26 +687,26 @@ HTML_TEMPLATE = r"""
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            background-color: #222222;
-            border: 1px solid #383838;
+            background-color: #161616;
+            border: 1px solid #282828;
             padding: 5px 12px;
             border-radius: 20px;
             cursor: pointer;
             font-size: 0.8rem;
             font-weight: 600;
-            color: #888888;
+            color: #777777;
             transition: all 0.2s ease-in-out;
             user-select: none;
         }
 
         .custom-toggle-pill:hover {
-            border-color: #666666;
-            color: #cccccc;
+            border-color: #444444;
+            color: #bbbbbb;
         }
 
         .custom-toggle-pill.active {
-            background-color: #333333;
-            border-color: #666666;
+            background-color: #222222;
+            border-color: #444444;
             color: #ffffff;
         }
 
@@ -777,7 +714,7 @@ HTML_TEMPLATE = r"""
             width: 12px;
             height: 12px;
             border-radius: 50%;
-            background-color: #555555;
+            background-color: #444444;
             transition: all 0.2s ease-in-out;
             display: inline-block;
         }
@@ -787,15 +724,19 @@ HTML_TEMPLATE = r"""
             box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
         }
 
+        /* Direct Anchored Dropup Popup Overlay Styling */
         .dropup .dropdown-menu {
             z-index: 99999 !important;
             position: absolute !important;
             bottom: 100% !important;
+            left: 0 !important;
             top: auto !important;
             margin-bottom: 8px !important;
-            max-height: 380px;
+            max-height: 360px;
             overflow-y: auto;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
+            border: 1px solid var(--border-color);
+            background-color: #121212 !important;
         }
 
         .code-container {
@@ -807,20 +748,20 @@ HTML_TEMPLATE = r"""
         }
 
         .code-header {
-            background: #1a1a1a;
+            background: #141414;
             padding: 6px 14px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             font-size: 0.78rem;
-            color: #aaaaaa;
-            border-bottom: 1px solid #2a2a2a;
+            color: #888888;
+            border-bottom: 1px solid #222222;
         }
 
         pre {
             margin: 0;
             padding: 14px;
-            background: #0d0d0d !important;
+            background: #080808 !important;
             overflow-x: auto;
             max-width: 100%;
         }
@@ -918,9 +859,9 @@ HTML_TEMPLATE = r"""
                             </div>
                             <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary" style="font-size: 0.84rem; min-width: 240px;">
                                 <li><h6 class="dropdown-header text-secondary font-monospace"><i class="fa-solid fa-sliders me-1"></i> SELECT AI MODE</h6></li>
-                                <li><a class="dropdown-item py-2 fw-bold active" href="#" id="modeItemCoding" onclick="setAiMode('coding')"><i class="fa-solid fa-code me-2"></i> 💻 Coding Mode (Default)</a></li>
-                                <li><a class="dropdown-item py-2 fw-bold" href="#" id="modeItemThinking" onclick="setAiMode('thinking')"><i class="fa-solid fa-brain me-2"></i> 🧠 Thinking Mode</a></li>
-                                <li><a class="dropdown-item py-2 fw-bold" href="#" id="modeItemChat" onclick="setAiMode('chat')"><i class="fa-solid fa-comments me-2"></i> 💬 General Chat</a></li>
+                                <li><a class="dropdown-item py-2 fw-bold active" href="#" id="modeItemCoding" onclick="setAiMode('coding')">Coding Mode (Default)</a></li>
+                                <li><a class="dropdown-item py-2 fw-bold" href="#" id="modeItemThinking" onclick="setAiMode('thinking')">Thinking Mode</a></li>
+                                <li><a class="dropdown-item py-2 fw-bold" href="#" id="modeItemChat" onclick="setAiMode('chat')">General Chat</a></li>
                             </ul>
                         </div>
 
@@ -934,13 +875,13 @@ HTML_TEMPLATE = r"""
                             <span><i class="fa-solid fa-wrench me-1"></i> Auto-Fix</span>
                         </div>
 
-                        <!-- Upward Model Selector Dropdown with z-index overlap fix -->
+                        <!-- Clean Anchored Upward Model Selector Dropdown -->
                         <div class="dropup d-inline-block" id="modelDropup">
                             <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;" onclick="renderModelDropupList()">
-                                <i class="fa-solid fa-robot me-1"></i> <span id="bottomModelBadge">gemini-2.5-flash</span>
+                                <i class="fa-solid fa-microchip me-1"></i> <span id="bottomModelBadge">Claude 3.5 Sonnet</span>
                             </div>
-                            <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary" id="modelDropupList" style="font-size: 0.84rem; min-width: 320px;">
-                                <!-- Dynamic Rendered Items -->
+                            <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary" id="modelDropupList" style="font-size: 0.84rem; min-width: 280px;">
+                                <!-- Dynamic Clean Rendered Items -->
                             </ul>
                         </div>
                     </div>
@@ -1024,20 +965,20 @@ HTML_TEMPLATE = r"""
         </div>
     </div>
 
-    <!-- API Key Missing Warning Modal -->
+    <!-- Clean Warning Modal -->
     <div class="modal fade" id="apiKeyWarningModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content bg-dark text-light border-secondary">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title text-warning"><i class="fa-solid fa-triangle-exclamation me-2"></i>API Key Required</h5>
+                    <h5 class="modal-title text-warning"><i class="fa-solid fa-triangle-exclamation me-2"></i>OpenRouter API Key Required</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <p class="text-light mb-3" id="warningModalText" style="font-size: 0.92rem;">
-                        The API key for this service is not connected yet. Please add your key in Settings.
+                        OpenRouter API key is not connected yet. Please add your key in Settings.
                     </p>
                     <div class="p-3 bg-black rounded border border-secondary text-secondary" style="font-size: 0.82rem;">
-                        <i class="fa-solid fa-circle-info text-light me-1"></i> Connecting your OpenRouter or Gemini API key in Settings unlocks ALL models (Claude, GPT-4o, DeepSeek, Qwen, Gemma, Gemini).
+                        <i class="fa-solid fa-circle-info text-light me-1"></i> Connecting your OpenRouter API key unlocks Claude, GPT-4o, DeepSeek, Qwen, and Gemma models.
                     </div>
                 </div>
                 <div class="modal-footer border-secondary">
@@ -1089,7 +1030,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         </div>
     </div>
 
-    <!-- Vertical Settings Page Modal with Clear OpenRouter Multi-Model Key Label -->
+    <!-- Clean Vertical Settings Page (OpenRouter Only) -->
     <div class="modal fade" id="settingsModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content bg-dark text-light border-secondary">
@@ -1099,36 +1040,21 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 </div>
                 <div class="modal-body p-4">
                     <div class="d-flex flex-column gap-4">
-                        <!-- Line 1: Gemini API Key -->
-                        <div class="p-3 bg-black rounded border border-secondary">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <label class="form-label font-weight-bold text-light mb-0">
-                                    <i class="fa-solid fa-sparkles text-light me-2"></i> Google Gemini API Key
-                                </label>
-                                <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn btn-sm btn-outline-light font-monospace py-0 px-2" style="font-size: 0.78rem;">
-                                    <i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Get Gemini Key
-                                </a>
-                            </div>
-                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Unlocks Gemini 2.5 Flash, Gemini 2.5 Pro, and 1.5 Flash.</p>
-                            <input type="password" id="geminiApiKeyInput" class="form-control bg-dark text-light border-secondary font-monospace" placeholder="AIzaSy...">
-                        </div>
-
-                        <!-- Line 2: OpenRouter API Key -->
+                        <!-- Single Unified OpenRouter API Key Input -->
                         <div class="p-3 bg-black rounded border border-secondary">
                             <div class="d-flex justify-content-between align-items-center mb-1">
                                 <label class="form-label font-weight-bold text-light mb-0">
                                     <i class="fa-solid fa-globe text-light me-2"></i> OpenRouter API Key
-                                    <span class="badge bg-success ms-2 font-monospace" style="font-size: 0.7rem;">Unlocks Claude, GPT-4o, DeepSeek, Qwen & Gemma</span>
                                 </label>
                                 <a href="https://openrouter.ai/keys" target="_blank" class="btn btn-sm btn-outline-light font-monospace py-0 px-2" style="font-size: 0.78rem;">
                                     <i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Get OpenRouter Key
                                 </a>
                             </div>
-                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Connecting your single OpenRouter API key unlocks Claude 3.5 Sonnet, GPT-4o, DeepSeek Coder V2, Qwen 2.5 Coder 32B, Gemma 4, etc.</p>
+                            <p class="text-secondary mb-2" style="font-size: 0.78rem;">Single key powers all models (Claude 3.5 Sonnet, GPT-4o, DeepSeek Coder V2, Qwen 2.5 Coder, Gemma 4).</p>
                             <input type="password" id="openrouterApiKeyInput" class="form-control bg-dark text-light border-secondary font-monospace" placeholder="sk-or-v1-...">
                         </div>
 
-                        <!-- Line 3: Sync & Storage Scope -->
+                        <!-- Sync & Storage Scope -->
                         <div class="p-3 bg-black rounded border border-secondary">
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
@@ -1159,7 +1085,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         // Account State
         let loggedInUser = localStorage.getItem("SCRIPTFORGE_USER") || null;
 
-        // High-Entropy Player-Specific Session Key Generation
         function getSessionKey() {
             let key = localStorage.getItem("SCRIPTFORGE_SESSION_KEY");
             if (!key) {
@@ -1171,10 +1096,9 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             return key;
         }
 
-        let geminiApiKey = localStorage.getItem("GEMINI_API_KEY") || "";
         let openrouterApiKey = localStorage.getItem("OPENROUTER_API_KEY") || "";
-        let selectedModel = localStorage.getItem("ANTIGRAVITY_SELECTED_MODEL") || "gemini/gemini-2.5-flash";
-        let aiMode = localStorage.getItem("SCRIPTFORGE_AI_MODE") || "coding"; // Default Coding Mode
+        let selectedModel = localStorage.getItem("ANTIGRAVITY_SELECTED_MODEL") || "openrouter/anthropic/claude-3.5-sonnet";
+        let aiMode = localStorage.getItem("SCRIPTFORGE_AI_MODE") || "coding";
         let autoExecute = localStorage.getItem("ANTIGRAVITY_AUTO_EXECUTE") === "true";
         let autoFix = localStorage.getItem("ANTIGRAVITY_AUTO_FIX") !== "false";
         let currentTheme = localStorage.getItem("ANTIGRAVITY_THEME") || "dark";
@@ -1184,25 +1108,16 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         let editingChatId = null;
         let activePollingScriptIds = {};
 
-        // Available AI Models Configuration
+        // Clean Model Definitions (Emojis & Icons Removed)
         const ALL_MODELS = [
-            // Gemini Models
-            { id: "gemini/gemini-2.5-flash", name: "✨ Gemini 2.5 Flash", provider: "gemini" },
-            { id: "gemini/gemini-2.5-pro", name: "✨ Gemini 2.5 Pro", provider: "gemini" },
-            { id: "gemini/gemini-1.5-flash", name: "✨ Gemini 1.5 Flash", provider: "gemini" },
-
-            // Anthropic Claude
-            { id: "openrouter/anthropic/claude-3.5-sonnet", name: "🟠 Claude 3.5 Sonnet", provider: "openrouter" },
-            { id: "openrouter/anthropic/claude-3-haiku", name: "🟠 Claude 3 Haiku", provider: "openrouter" },
-
-            // OpenAI GPT
-            { id: "openrouter/openai/gpt-4o", name: "🟢 OpenAI GPT-4o", provider: "openrouter" },
-            { id: "openrouter/openai/gpt-4o-mini", name: "🟢 OpenAI GPT-4o Mini", provider: "openrouter" },
-
-            // DeepSeek & Qwen & Gemma
-            { id: "openrouter/deepseek/deepseek-coder", name: "🔵 DeepSeek Coder V2", provider: "openrouter" },
-            { id: "openrouter/qwen/qwen-2.5-coder-32b-instruct", name: "🌐 Qwen 2.5 Coder 32B", provider: "openrouter" },
-            { id: "openrouter/google/gemma-4-31b-it:free", name: "🌐 Google Gemma 4 Free", provider: "openrouter" }
+            { id: "openrouter/anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet" },
+            { id: "openrouter/anthropic/claude-3-haiku", name: "Claude 3 Haiku" },
+            { id: "openrouter/openai/gpt-4o", name: "GPT-4o" },
+            { id: "openrouter/openai/gpt-4o-mini", name: "GPT-4o Mini" },
+            { id: "openrouter/deepseek/deepseek-coder", name: "DeepSeek Coder V2" },
+            { id: "openrouter/qwen/qwen-2.5-coder-32b-instruct", name: "Qwen 2.5 Coder 32B" },
+            { id: "openrouter/google/gemma-4-31b-it:free", name: "Gemma 4 (Free)" },
+            { id: "openrouter/cohere/north-mini-code:free", name: "Cohere North Code (Free)" }
         ];
 
         document.documentElement.setAttribute("data-bs-theme", currentTheme);
@@ -1226,7 +1141,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 labelEl.innerText = "Mode: Chat";
                 iconEl.className = "fa-solid fa-comments me-1";
                 document.getElementById("modeItemChat").classList.add("active");
-            } else { // coding
+            } else {
                 aiMode = "coding";
                 labelEl.innerText = "Mode: Coding";
                 iconEl.className = "fa-solid fa-code me-1";
@@ -1239,54 +1154,48 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             localStorage.setItem("SCRIPTFORGE_AI_MODE", aiMode);
             updateAiModeUI();
             
-            const modeNames = { coding: "💻 Coding Mode", thinking: "🧠 Thinking Mode", chat: "💬 General Chat" };
+            const modeNames = { coding: "Coding Mode", thinking: "Thinking Mode", chat: "General Chat" };
             showToast("Active Mode: " + modeNames[mode], "fa-solid fa-sliders text-light");
         }
 
-        function updateModelDisplayBadge() {
-            const shortName = selectedModel.split('/').pop();
-            document.getElementById("bottomModelBadge").innerText = shortName;
+        function getCleanModelName(id) {
+            const m = ALL_MODELS.find(x => x.id === id);
+            return m ? m.name : id.split('/').pop();
         }
 
-        function isModelConnected(model) {
-            if (model.provider === "gemini") return !!geminiApiKey;
-            if (model.provider === "openrouter") return !!openrouterApiKey;
-            return false;
+        function updateModelDisplayBadge() {
+            document.getElementById("bottomModelBadge").innerText = getCleanModelName(selectedModel);
+        }
+
+        function isModelConnected() {
+            return !!openrouterApiKey;
         }
 
         function renderModelDropupList() {
             const listEl = document.getElementById("modelDropupList");
             listEl.innerHTML = "";
 
-            const connectedModels = ALL_MODELS.filter(m => isModelConnected(m));
-            const unconnectedModels = ALL_MODELS.filter(m => !isModelConnected(m));
+            const connected = isModelConnected();
 
-            if (connectedModels.length > 0) {
+            if (connected) {
                 const header1 = document.createElement("li");
-                header1.innerHTML = `<h6 class="dropdown-header text-success font-monospace"><i class="fa-solid fa-circle-check me-1"></i> CONNECTED SERVICES</h6>`;
+                header1.innerHTML = `<h6 class="dropdown-header text-success font-monospace">CONNECTED MODELS</h6>`;
                 listEl.appendChild(header1);
 
-                connectedModels.forEach(m => {
+                ALL_MODELS.forEach(m => {
                     const li = document.createElement("li");
-                    li.innerHTML = `<a class="dropdown-item py-2 d-flex justify-content-between align-items-center" href="#" onclick="selectModel('${m.id}')"><span>${escapeHtml(m.name)}</span> <i class="fa-solid fa-check text-success"></i></a>`;
+                    const isSelected = m.id === selectedModel;
+                    li.innerHTML = `<a class="dropdown-item py-2 d-flex justify-content-between align-items-center ${isSelected ? 'active fw-bold' : ''}" href="#" onclick="selectModel('${m.id}')"><span>${escapeHtml(m.name)}</span> ${isSelected ? '<i class="fa-solid fa-check text-success"></i>' : ''}</a>`;
                     listEl.appendChild(li);
                 });
-            }
-
-            if (unconnectedModels.length > 0) {
-                if (connectedModels.length > 0) {
-                    const div = document.createElement("li");
-                    div.innerHTML = `<hr class="dropdown-divider border-secondary">`;
-                    listEl.appendChild(div);
-                }
-
+            } else {
                 const header2 = document.createElement("li");
-                header2.innerHTML = `<h6 class="dropdown-header text-warning font-monospace"><i class="fa-solid fa-triangle-exclamation me-1"></i> REQUIRES API KEY (NOT CONNECTED)</h6>`;
+                header2.innerHTML = `<h6 class="dropdown-header text-warning font-monospace">OPENROUTER KEY REQUIRED</h6>`;
                 listEl.appendChild(header2);
 
-                unconnectedModels.forEach(m => {
+                ALL_MODELS.forEach(m => {
                     const li = document.createElement("li");
-                    li.innerHTML = `<a class="dropdown-item py-2 d-flex justify-content-between align-items-center text-secondary" href="#" onclick="clickUnconnectedModel('${m.id}', '${m.provider}', '${escapeHtml(m.name)}')"><span><i class="fa-solid fa-triangle-exclamation text-warning me-2"></i>${escapeHtml(m.name)}</span> <span class="badge bg-dark border border-warning text-warning" style="font-size:0.7rem;">Needs Key</span></a>`;
+                    li.innerHTML = `<a class="dropdown-item py-2 d-flex justify-content-between align-items-center text-secondary" href="#" onclick="clickUnconnectedModel('${m.id}', '${escapeHtml(m.name)}')"><span>${escapeHtml(m.name)}</span> <span class="badge bg-dark border border-warning text-warning" style="font-size:0.68rem;">Needs Key</span></a>`;
                     listEl.appendChild(li);
                 });
             }
@@ -1296,12 +1205,11 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             selectedModel = modelId;
             localStorage.setItem("ANTIGRAVITY_SELECTED_MODEL", selectedModel);
             updateModelDisplayBadge();
-            showToast("Selected Model: " + selectedModel.split('/').pop(), "fa-solid fa-robot text-light");
+            showToast("Model: " + getCleanModelName(selectedModel), "fa-solid fa-microchip text-light");
         }
 
-        function clickUnconnectedModel(modelId, provider, modelName) {
-            const providerName = provider === "gemini" ? "Google Gemini" : "OpenRouter (Unlocks Claude, GPT-4o, DeepSeek, Qwen)";
-            document.getElementById("warningModalText").innerText = `The API key for ${providerName} is not connected yet. Please add your key in Settings to use ${modelName}.`;
+        function clickUnconnectedModel(modelId, modelName) {
+            document.getElementById("warningModalText").innerText = `OpenRouter API key is not connected yet. Please add your key in Settings to use ${modelName}.`;
             const modal = new bootstrap.Modal(document.getElementById("apiKeyWarningModal"));
             modal.show();
         }
@@ -1312,7 +1220,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         }
 
         function openSettingsModal() {
-            document.getElementById("geminiApiKeyInput").value = geminiApiKey;
             document.getElementById("openrouterApiKeyInput").value = openrouterApiKey;
 
             const scopeText = document.getElementById("settingsSyncScopeText");
@@ -1333,23 +1240,17 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         }
 
         function saveSettings() {
-            geminiApiKey = document.getElementById("geminiApiKeyInput").value.trim();
             openrouterApiKey = document.getElementById("openrouterApiKeyInput").value.trim();
-
-            localStorage.setItem("GEMINI_API_KEY", geminiApiKey);
             localStorage.setItem("OPENROUTER_API_KEY", openrouterApiKey);
 
             fetch('/api/set_key', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    api_key: geminiApiKey,
-                    openrouter_key: openrouterApiKey
-                })
+                body: JSON.stringify({ openrouter_key: openrouterApiKey })
             });
 
             bootstrap.Modal.getInstance(document.getElementById('settingsModal')).hide();
-            showToast("All Settings Saved!", "fa-solid fa-floppy-disk text-light");
+            showToast("Settings Saved!", "fa-solid fa-floppy-disk text-light");
             renderModelDropupList();
         }
 
@@ -1514,14 +1415,14 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             autoExecute = !autoExecute;
             localStorage.setItem("ANTIGRAVITY_AUTO_EXECUTE", autoExecute);
             updateTogglePillsUI();
-            showToast(autoExecute ? "⚡ Auto-Run Enabled!" : "Auto-Run Disabled", autoExecute ? "fa-solid fa-bolt text-light" : "fa-solid fa-circle-info text-secondary");
+            showToast(autoExecute ? "Auto-Run Enabled" : "Auto-Run Disabled", autoExecute ? "fa-solid fa-bolt text-light" : "fa-solid fa-circle-info text-secondary");
         }
 
         function toggleAutoFix() {
             autoFix = !autoFix;
             localStorage.setItem("ANTIGRAVITY_AUTO_FIX", autoFix);
             updateTogglePillsUI();
-            showToast(autoFix ? "🔧 Auto-Fix Errors Active!" : "Auto-Fix Disabled", autoFix ? "fa-solid fa-wrench text-light" : "fa-solid fa-circle-info text-secondary");
+            showToast(autoFix ? "Auto-Fix Errors Active" : "Auto-Fix Disabled", autoFix ? "fa-solid fa-wrench text-light" : "fa-solid fa-circle-info text-secondary");
         }
 
         function autoGrow(element) {
@@ -1546,10 +1447,9 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         function copyExecutorScript() {
             const code = getFormattedExecutorScript();
             navigator.clipboard.writeText(code);
-            showToast("📋 Session Loadstring copied to clipboard!", "fa-solid fa-copy text-light");
+            showToast("Session Loadstring copied!", "fa-solid fa-copy text-light");
         }
 
-        // Local Chat Storage Management
         let chats = JSON.parse(localStorage.getItem("SCRIPTFORGE_CHATS")) || JSON.parse(localStorage.getItem("ANTIGRAVITY_CHATS")) || [];
         let activeChatId = localStorage.getItem("SCRIPTFORGE_ACTIVE_CHAT") || localStorage.getItem("ANTIGRAVITY_ACTIVE_CHAT") || null;
 
@@ -1574,7 +1474,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 messages: [
                     {
                         role: 'ai',
-                        content: "👋 **Welcome to ScriptForge!** Connect your Roblox executor script to start writing & auto-fixing game scripts in real-time."
+                        content: "Welcome to ScriptForge. Connect your Roblox executor script to start writing & auto-fixing game scripts in real-time."
                     }
                 ]
             };
@@ -1640,7 +1540,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         function updateGameFilterDropdown() {
             const select = document.getElementById("gameFilterSelect");
             const currentVal = select.value;
-            select.innerHTML = '<option value="all">🎮 All Games</option>';
+            select.innerHTML = '<option value="all">All Games</option>';
             
             const set = new Set();
             chats.forEach(c => {
@@ -1650,7 +1550,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             set.forEach(gName => {
                 const opt = document.createElement("option");
                 opt.value = gName;
-                opt.innerText = "🎮 " + gName;
+                opt.innerText = gName;
                 select.appendChild(opt);
             });
 
@@ -1705,7 +1605,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             if (titleMatches.length > 0) {
                 const div1 = document.createElement("div");
                 div1.className = "section-divider";
-                div1.innerHTML = '<i class="fa-solid fa-message me-1"></i> Matching Chats';
+                div1.innerText = "Matching Chats";
                 listEl.appendChild(div1);
 
                 titleMatches.forEach(chat => {
@@ -1716,7 +1616,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             if (messageMatches.length > 0) {
                 const div2 = document.createElement("div");
                 div2.className = "section-divider";
-                div2.innerHTML = '<i class="fa-solid fa-magnifying-glass me-1"></i> Messages Found';
+                div2.innerText = "Messages Found";
                 listEl.appendChild(div2);
 
                 messageMatches.forEach(item => {
@@ -1739,8 +1639,8 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             item.onclick = () => switchChat(chat.id);
             item.ondblclick = (e) => startInlineRename(chat.id, e);
             
-            let gameTag = chat.game_name ? `<span class="chat-item-sub"><i class="fa-solid fa-gamepad me-1"></i>${escapeHtml(chat.game_name)}</span>` : '';
-            let snippetTag = snippet ? `<span class="chat-item-sub text-light"><i class="fa-solid fa-quote-left me-1"></i>${escapeHtml(snippet)}</span>` : '';
+            let gameTag = chat.game_name ? `<span class="chat-item-sub">${escapeHtml(chat.game_name)}</span>` : '';
+            let snippetTag = snippet ? `<span class="chat-item-sub text-light">${escapeHtml(snippet)}</span>` : '';
 
             let titleHTML = '';
             if (editingChatId === chat.id) {
@@ -1858,7 +1758,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
                     if (!wasConnected) {
                         wasConnected = true;
-                        showToast(`🎮 Connected to ${data.player_name || "Roblox"}!`, "fa-solid fa-gamepad text-light");
+                        showToast(`Connected to ${data.player_name || "Roblox"}`, "fa-solid fa-gamepad text-light");
                         
                         const modalEl = document.getElementById("executorModal");
                         if (modalEl && modalEl.classList.contains("show")) {
@@ -1875,7 +1775,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
                     if (wasConnected) {
                         wasConnected = false;
-                        showToast("⚠️ Roblox Session Disconnected", "fa-solid fa-circle-exclamation text-secondary");
+                        showToast("Roblox Session Disconnected", "fa-solid fa-circle-exclamation text-secondary");
                     }
                 }
             } catch (e) {
@@ -1902,9 +1802,8 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             const prompt = input.value.trim();
             if (!prompt) return;
 
-            const targetModelObj = ALL_MODELS.find(m => m.id === selectedModel);
-            if (targetModelObj && !isModelConnected(targetModelObj)) {
-                clickUnconnectedModel(targetModelObj.id, targetModelObj.provider, targetModelObj.name);
+            if (!isModelConnected()) {
+                clickUnconnectedModel(selectedModel, getCleanModelName(selectedModel));
                 return;
             }
 
@@ -1946,7 +1845,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 <div class="message-content">
                     <div class="progress-box">
                         <i class="fa-solid fa-spinner fa-spin me-2"></i>
-                        <span>Processing request with ${escapeHtml(selectedModel.split('/').pop())}...</span>
+                        <span>Processing request with ${escapeHtml(getCleanModelName(selectedModel))}...</span>
                     </div>
                 </div>
             `;
@@ -1962,7 +1861,6 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     body: JSON.stringify({
                         session_key: getSessionKey(),
                         prompt: prompt,
-                        api_key: geminiApiKey,
                         openrouter_key: openrouterApiKey,
                         model: selectedModel,
                         ai_mode: aiMode,
@@ -2054,13 +1952,13 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 const header = document.createElement('div');
                 header.className = 'code-header';
                 header.innerHTML = `
-                    <span><i class="fa-solid fa-code me-1"></i> luau</span>
+                    <span>luau</span>
                     <div>
                         <button class="btn btn-sm btn-light me-1 text-dark py-0 px-2 fw-bold" style="font-size: 0.75rem;" onclick="runInRoblox(this)">
-                            <i class="fa-solid fa-play me-1"></i> Run in Game
+                            Run in Game
                         </button>
                         <button class="btn btn-sm btn-outline-secondary py-0 px-2 text-light" style="font-size: 0.75rem;" onclick="copyCode(this)">
-                            <i class="fa-solid fa-copy me-1"></i> Copy
+                            Copy
                         </button>
                     </div>
                 `;
@@ -2080,7 +1978,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({session_key: getSessionKey(), code: code})
                 });
-                showToast("🚀 Script queued to Roblox Executor!", "fa-solid fa-rocket text-light");
+                showToast("Script queued to Roblox Executor", "fa-solid fa-rocket text-light");
             } catch(e) {
                 showToast("Error sending script: " + e.message, "fa-solid fa-circle-exclamation text-secondary");
             }
@@ -2089,7 +1987,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         function copyCode(btn) {
             const code = btn.closest('.code-header').getAttribute('data-code');
             navigator.clipboard.writeText(code);
-            showToast("📋 Code copied to clipboard!", "fa-solid fa-copy text-light");
+            showToast("Code copied to clipboard", "fa-solid fa-copy text-light");
         }
 
         function escapeHtml(str) {
@@ -2199,9 +2097,8 @@ def sync_chats_cloud():
 
 @app.route("/api/set_key", methods=["POST"])
 def set_key():
-    global gemini_api_key, openrouter_api_key
+    global openrouter_api_key
     data = request.json or {}
-    gemini_api_key = data.get("api_key", "")
     openrouter_api_key = data.get("openrouter_key", "")
     return jsonify({"status": "ok"})
 
@@ -2228,8 +2125,8 @@ def generate_title_route():
         return jsonify({"title": "New chat"})
     
     title_prompt = f"Summarize this user request into a short 2 to 4 word chat title. Return ONLY the title text without quotes, punctuation, or extra markdown:\n'{prompt}'"
-    req_key = os.getenv("GEMINI_API_KEY", "") or gemini_api_key
-    reply, err = generate_ai_response(title_prompt, "gemini/gemini-2.5-flash", req_key, [])
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
+    reply, err = generate_ai_response(title_prompt, "openrouter/anthropic/claude-3.5-sonnet", [], game_ctx={}, openrouter_key=openrouter_key, ai_mode="chat")
     
     if reply:
         clean_title = reply.strip().strip('"').strip("'").split("\n")[0]
@@ -2266,16 +2163,15 @@ def chat():
     store = get_session_store(s_key)
 
     prompt = data.get("prompt", "")
-    req_key = data.get("api_key") or os.getenv("GEMINI_API_KEY", "") or gemini_api_key
     openrouter_key = data.get("openrouter_key") or os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
-    selected_model = data.get("model", "gemini/gemini-2.5-flash")
+    selected_model = data.get("model", "openrouter/anthropic/claude-3.5-sonnet")
     ai_mode = data.get("ai_mode", "coding")
     
     auto_execute = data.get("auto_execute", False)
     auto_fix = data.get("auto_fix", True)
     history = data.get("history", [])
 
-    reply, err = generate_ai_response(prompt, selected_model, req_key, history, store["game_context"], openrouter_key=openrouter_key, ai_mode=ai_mode)
+    reply, err = generate_ai_response(prompt, selected_model, history, store["game_context"], openrouter_key=openrouter_key, ai_mode=ai_mode)
     
     if err:
         return jsonify({"error": f"AI Generation Error: {err}"}), 500
@@ -2290,11 +2186,11 @@ def chat():
         script_id = f"scr_{int(time.time()*1000)}"
         
         trajectory = [
-            "🚀 Initial script generated.",
-            "⏳ Sent script to Roblox Executor for verification..."
+            "Initial script generated.",
+            "Sent script to Roblox Executor for verification..."
         ]
 
-        testing_reply = f"⏳ **Testing and verifying script in Roblox Session...**"
+        testing_reply = f"Testing and verifying script in Roblox Session..."
 
         store["script_sessions"][script_id] = {
             "status": "verifying",
@@ -2343,10 +2239,10 @@ def report_success():
 
     sess = store["script_sessions"].get(script_id)
     if sess:
-        sess["logs"].append("✅ Verification Passed: Script executed with 0 errors in game!")
+        sess["logs"].append("Verification Passed: Script executed with 0 errors in game!")
         sess["status"] = "verified"
         sess["final_code"] = code
-        sess["reply"] = f"✅ **Script Verified (0 Errors)**\n```luau\n{code}\n```"
+        sess["reply"] = f"Script Verified (0 Errors)\n```luau\n{code}\n```"
         print(f"[VERIFIED SUCCESS] Session [{s_key}] Script [{script_id}] passed test with 0 errors!")
 
     return jsonify({"status": "acknowledged"})
@@ -2375,15 +2271,15 @@ def report_error():
 
     attempts = sess.get("attempts", 0) + 1
     sess["attempts"] = attempts
-    sess["logs"].append(f"❌ Error Caught: {error_msg}")
+    sess["logs"].append(f"Error Caught: {error_msg}")
 
     if attempts >= 3 or not sess.get("auto_fix", True):
-        sess["logs"].append("⚠️ Max auto-fix attempts reached (3/3). Stopping loop.")
+        sess["logs"].append("Max auto-fix attempts reached (3/3). Stopping loop.")
         sess["status"] = "failed"
-        sess["reply"] = f"⚠️ **Script Auto-Fix Limit Reached** (Error: {error_msg})\n```luau\n{failed_code}\n```"
+        sess["reply"] = f"Script Auto-Fix Limit Reached (Error: {error_msg})\n```luau\n{failed_code}\n```"
         return jsonify({"status": "max_attempts_reached"}), 400
 
-    sess["logs"].append(f"🔧 Auto-Fixing Error... (Attempt {attempts}/3)...")
+    sess["logs"].append(f"Auto-Fixing Error... (Attempt {attempts}/3)...")
 
     debug_prompt = f"""
     The previous Luau script failed in the Roblox engine with the following error:
@@ -2399,21 +2295,20 @@ def report_error():
     Please fix all errors in this code and return the corrected script inside a ```luau ... ``` code block.
     """
 
-    req_key = os.getenv("GEMINI_API_KEY", "") or gemini_api_key
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
-    selected_model = "gemini/gemini-2.5-flash"
+    selected_model = "openrouter/anthropic/claude-3.5-sonnet"
 
-    reply, err = generate_ai_response(debug_prompt, selected_model, req_key, sess.get("history", []), store["game_context"], openrouter_key=openrouter_key, ai_mode="coding")
+    reply, err = generate_ai_response(debug_prompt, selected_model, sess.get("history", []), store["game_context"], openrouter_key=openrouter_key, ai_mode="coding")
 
     if reply:
         fixed_code = extract_luau_code(reply)
         if fixed_code:
-            sess["logs"].append(f"🚀 Queued fixed script (Attempt {attempts}/3) for verification...")
+            sess["logs"].append(f"Queued fixed script (Attempt {attempts}/3) for verification...")
             store["pending_scripts"].append({"id": script_id, "code": fixed_code})
             return jsonify({"status": "auto_fixed", "new_code": fixed_code, "attempt": attempts})
 
     sess["status"] = "failed"
-    sess["logs"].append("❌ AI auto-fix failed to produce a valid solution.")
+    sess["logs"].append("AI auto-fix failed to produce a valid solution.")
     return jsonify({"error": "Auto-fix failed"}), 500
 
 @app.route("/api/get_autofix_logs", methods=["GET"])
