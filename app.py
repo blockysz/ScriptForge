@@ -218,14 +218,14 @@ def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, o
         You are ScriptForge's Deep Reasoning & Architecture Assistant connected directly to a live Roblox game player session.
         Your goal:
         1. Perform deep reasoning, step-by-step planning, and architectural breakdown for Roblox game systems (RemoteEvents, DataStores, Inventory systems).
-        2. Explain how components interact before outputting code inside ```luau ... ``` blocks.
+        2. Provide thorough technical analysis and explanation of game logic. Do not write code intended for execution.
         """
     elif ai_mode == "chat":
         system_instruction = """
         You are ScriptForge's friendly AI Chat Assistant connected directly to a live Roblox game player session.
         Your goal:
         1. Answer game design, scripting, and Roblox concept questions conversationally in standard Markdown.
-        2. Provide helpful explanations, tips, and guidelines.
+        2. Provide helpful explanations, tips, and guidelines without writing automated test code.
         """
     else: # Default: Coding Mode
         system_instruction = """
@@ -2221,7 +2221,15 @@ def chat():
     status = "completed"
     trajectory = []
 
-    if extracted_code:
+    # Check executor connection state
+    ctx = store.get("game_context", {})
+    is_executor_connected = ctx.get("connected", False) and (time.time() - ctx.get("last_seen", 0) < 10)
+
+    # ONLY queue and test scripts if ALL conditions are met:
+    # 1. Mode is "coding"
+    # 2. Executor is currently connected
+    # 3. Valid Luau code was extracted
+    if extracted_code and ai_mode == "coding" and is_executor_connected:
         script_id = f"scr_{int(time.time()*1000)}"
         
         trajectory = [
@@ -2252,6 +2260,7 @@ def chat():
             "trajectory": trajectory
         })
 
+    # In Thinking mode, Chat mode, or when disconnected: simply display the response without executor execution
     return jsonify({
         "reply": reply,
         "script_id": None,
