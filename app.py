@@ -727,7 +727,6 @@ HTML_TEMPLATE = r"""
             box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
         }
 
-        /* Direct Anchored Dropup Popup Overlay Styling - No floating gap */
         .dropup {
             position: relative !important;
         }
@@ -745,6 +744,22 @@ HTML_TEMPLATE = r"""
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
             border: 1px solid var(--border-color);
             background-color: #121212 !important;
+        }
+
+        /* Mode Dropup Animation Keyframes */
+        @keyframes modeDropupSlideFade {
+            from {
+                opacity: 0;
+                transform: translateY(8px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        #modeInputDropup .dropdown-menu.show {
+            animation: modeDropupSlideFade 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
 
         .code-container {
@@ -859,15 +874,15 @@ HTML_TEMPLATE = r"""
                 <div class="input-box">
                     <textarea id="userInput" placeholder="Ask ScriptForge to write a Luau script for your game..." oninput="autoGrow(this)" onkeydown="handleKeyDown(event)"></textarea>
 
-                    <!-- Clean, Slightly Larger Mode Selector Button Directly to the left of Send button with proper spacing -->
+                    <!-- Animated & Larger Mode Selector Dropup Button Next to Send button -->
                     <div class="dropup d-inline-block me-2 align-self-center" id="modeInputDropup" style="position: relative;">
                         <button class="btn btn-sm text-secondary border-0 p-0 shadow-none d-flex align-items-center gap-1 dropdown-toggle" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" style="background: transparent; font-size: 0.82rem; color: #888888; cursor: pointer; border-radius: 4px; line-height: 1;">
                             <i class="fa-solid fa-code" id="modePillIcon" style="font-size: 0.8rem; color: #888888;"></i> <span id="modePillLabel" style="font-size: 0.82rem; color: #888888;">coding mode</span>
                         </button>
-                        <ul class="dropdown-menu dropdown-menu-dark shadow border-secondary py-1" style="font-size: 0.8rem; min-width: 140px; background: #141414 !important; border: 1px solid #282828 !important; right: 0; left: auto !important; bottom: 100% !important; top: auto !important; margin-bottom: 6px !important; transform: none !important;">
-                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.8rem; color: #bbbbbb !important;" href="#" id="modeItemCoding" onclick="setAiMode('coding')">coding mode</a></li>
-                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.8rem; color: #888888 !important;" href="#" id="modeItemThinking" onclick="setAiMode('thinking')">thinking mode</a></li>
-                            <li><a class="dropdown-item py-1 text-secondary" style="font-size: 0.8rem; color: #888888 !important;" href="#" id="modeItemChat" onclick="setAiMode('chat')">general chat</a></li>
+                        <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary p-2" style="font-size: 0.84rem; min-width: 175px; background: #141414 !important; border: 1px solid #282828 !important; right: 0; left: auto !important; bottom: 100% !important; top: auto !important; margin-bottom: 6px !important; transform: none !important;">
+                            <li><a class="dropdown-item py-2 px-3 text-secondary rounded" style="font-size: 0.84rem; color: #bbbbbb !important;" href="#" id="modeItemCoding" onclick="setAiMode('coding')"><i class="fa-solid fa-code me-2"></i> coding mode</a></li>
+                            <li><a class="dropdown-item py-2 px-3 text-secondary rounded" style="font-size: 0.84rem; color: #888888 !important;" href="#" id="modeItemThinking" onclick="setAiMode('thinking')"><i class="fa-solid fa-brain me-2"></i> thinking mode</a></li>
+                            <li><a class="dropdown-item py-2 px-3 text-secondary rounded" style="font-size: 0.84rem; color: #888888 !important;" href="#" id="modeItemChat" onclick="setAiMode('chat')"><i class="fa-solid fa-comments me-2"></i> general chat</a></li>
                         </ul>
                     </div>
 
