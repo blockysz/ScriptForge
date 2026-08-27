@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+.vercel/
+.idea/
+.vscode/
+antigravity_bridge.py
