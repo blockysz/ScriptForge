@@ -724,14 +724,19 @@ HTML_TEMPLATE = r"""
             box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
         }
 
-        /* Direct Anchored Dropup Popup Overlay Styling */
+        /* Direct Anchored Dropup Popup Overlay Styling - No floating gap */
+        .dropup {
+            position: relative !important;
+        }
+
         .dropup .dropdown-menu {
             z-index: 99999 !important;
             position: absolute !important;
             bottom: 100% !important;
-            left: 0 !important;
             top: auto !important;
-            margin-bottom: 8px !important;
+            left: 0 !important;
+            transform: none !important;
+            margin-bottom: 3px !important;
             max-height: 360px;
             overflow-y: auto;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
@@ -811,7 +816,7 @@ HTML_TEMPLATE = r"""
 
                 <div class="input-group input-group-sm mb-2">
                     <span class="input-group-text bg-black text-secondary border-secondary"><i class="fa-solid fa-magnifying-glass"></i></span>
-                    <input type="text" id="chatSearchInput" class="form-control bg-black text-light border-secondary" placeholder="Search chats & messages..." oninput="renderChatList()">
+                    <input type="text" id="chatSearchInput" name="chat_search_query" autocomplete="off" class="form-control bg-black text-light border-secondary" placeholder="Search chats & messages..." oninput="renderChatList()">
                 </div>
 
                 <select id="gameFilterSelect" class="form-select form-select-sm bg-black text-light border-secondary" onchange="renderChatList()">
@@ -852,13 +857,13 @@ HTML_TEMPLATE = r"""
 
                 <div class="bottom-toggles-bar">
                     <div class="toggle-group align-items-center">
-                        <!-- AI Mode Selector Dropup Pill Button -->
+                        <!-- AI Mode Selector Dropup Pill Button with static CSS positioning -->
                         <div class="dropup d-inline-block" id="modeDropup">
-                            <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;">
+                            <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" style="cursor: pointer;">
                                 <i class="fa-solid fa-code me-1" id="modePillIcon"></i> <span id="modePillLabel">Mode: Coding</span>
                             </div>
                             <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary" style="font-size: 0.84rem; min-width: 240px;">
-                                <li><h6 class="dropdown-header text-secondary font-monospace"><i class="fa-solid fa-sliders me-1"></i> SELECT AI MODE</h6></li>
+                                <li><h6 class="dropdown-header text-white fw-bold font-monospace">SELECT AI MODE</h6></li>
                                 <li><a class="dropdown-item py-2 fw-bold active" href="#" id="modeItemCoding" onclick="setAiMode('coding')">Coding Mode (Default)</a></li>
                                 <li><a class="dropdown-item py-2 fw-bold" href="#" id="modeItemThinking" onclick="setAiMode('thinking')">Thinking Mode</a></li>
                                 <li><a class="dropdown-item py-2 fw-bold" href="#" id="modeItemChat" onclick="setAiMode('chat')">General Chat</a></li>
@@ -875,9 +880,9 @@ HTML_TEMPLATE = r"""
                             <span><i class="fa-solid fa-wrench me-1"></i> Auto-Fix</span>
                         </div>
 
-                        <!-- Clean Anchored Upward Model Selector Dropdown -->
+                        <!-- Clean Anchored Upward Model Selector Dropdown with static CSS positioning -->
                         <div class="dropup d-inline-block" id="modelDropup">
-                            <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" style="cursor: pointer;" onclick="renderModelDropupList()">
+                            <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" style="cursor: pointer;" onclick="renderModelDropupList()">
                                 <i class="fa-solid fa-microchip me-1"></i> <span id="bottomModelBadge">Claude 3.5 Sonnet</span>
                             </div>
                             <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary" id="modelDropupList" style="font-size: 0.84rem; min-width: 280px;">
@@ -916,11 +921,11 @@ HTML_TEMPLATE = r"""
                         <div id="loginForm">
                             <div class="mb-3">
                                 <label class="form-label text-secondary" style="font-size: 0.85rem;">Username</label>
-                                <input type="text" id="loginUsername" class="form-control bg-black text-light border-secondary" placeholder="Enter username">
+                                <input type="text" id="loginUsername" name="sf_account_username" autocomplete="username" class="form-control bg-black text-light border-secondary" placeholder="Enter username">
                             </div>
                             <div class="mb-3">
                                 <label class="form-label text-secondary" style="font-size: 0.85rem;">Password</label>
-                                <input type="password" id="loginPassword" class="form-control bg-black text-light border-secondary" placeholder="Enter password">
+                                <input type="password" id="loginPassword" name="sf_account_password" autocomplete="current-password" class="form-control bg-black text-light border-secondary" placeholder="Enter password">
                             </div>
                             <button class="btn btn-light w-100 fw-bold text-dark" onclick="submitLogin()"><i class="fa-solid fa-right-to-bracket me-1"></i> Log In</button>
                         </div>
@@ -928,11 +933,11 @@ HTML_TEMPLATE = r"""
                         <div id="registerForm" style="display: none;">
                             <div class="mb-3">
                                 <label class="form-label text-secondary" style="font-size: 0.85rem;">Username</label>
-                                <input type="text" id="regUsername" class="form-control bg-black text-light border-secondary" placeholder="Choose a username">
+                                <input type="text" id="regUsername" name="sf_reg_username" autocomplete="username" class="form-control bg-black text-light border-secondary" placeholder="Choose a username">
                             </div>
                             <div class="mb-3">
                                 <label class="form-label text-secondary" style="font-size: 0.85rem;">Password</label>
-                                <input type="password" id="regPassword" class="form-control bg-black text-light border-secondary" placeholder="Create a password">
+                                <input type="password" id="regPassword" name="sf_reg_password" autocomplete="new-password" class="form-control bg-black text-light border-secondary" placeholder="Create a password">
                             </div>
                             <button class="btn btn-light w-100 fw-bold text-dark" onclick="submitRegister()"><i class="fa-solid fa-user-plus me-1"></i> Create Account</button>
                         </div>
@@ -1179,7 +1184,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
             if (connected) {
                 const header1 = document.createElement("li");
-                header1.innerHTML = `<h6 class="dropdown-header text-success font-monospace">CONNECTED MODELS</h6>`;
+                header1.innerHTML = `<h6 class="dropdown-header text-white fw-bold font-monospace">MODELS</h6>`;
                 listEl.appendChild(header1);
 
                 ALL_MODELS.forEach(m => {
