@@ -263,8 +263,8 @@ HTML_TEMPLATE = r"""
     <meta name="twitter:title" content="ScriptForge | Roblox Executor AI Studio">
     <meta name="twitter:description" content="The ultimate AI script generator & real-time auto-fixer for Roblox executors (Solara, Wave, Delta, MacSploit). Write, run, and auto-debug Luau scripts live in your Roblox player session.">
 
-    <!-- Tab Favicon Exact FontAwesome fa-hammer Icon -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='110' fill='%230f0f0f'/%3E%3Cpath fill='%23ffffff' transform='translate(74,74) scale(0.71)' d='M511.6 36.86l-64-64c-6.25-6.25-16.38-6.25-22.62 0l-105.8 105.8-132.8-132.8c-12.5-12.5-32.75-12.5-45.25 0l-128 128c-12.5 12.5-12.5 32.75 0 45.25l132.8 132.8-105.8 105.8c-6.25 6.25-6.25 16.38 0 22.62l64 64c6.25 6.25 16.38 6.25 22.62 0l105.8-105.8 132.8 132.8c12.5 12.5 32.75 12.5 45.25 0l128-128c12.5-12.5 12.5-32.75 0-45.25l-132.8-132.8 105.8-105.8c6.25-6.25 6.25-16.38 0-22.62z'/%3E%3C/svg%3E">
+    <!-- Tab Favicon Exact Full Hammer Icon Matching Header Brand Logo -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%230a0a0a'/%3E%3Cpath fill='%23ffffff' d='M470.6 137.4c12.5-12.5 12.5-32.8 0-45.3l-96-96c-12.5-12.5-32.8-12.5-45.3 0l-22.6 22.6c-12.5 12.5-12.5 32.8 0 45.3l96 96c12.5 12.5 32.8 12.5 45.3 0l22.6-22.6zM228.3 268.4L356.1 140.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L183 223.1 82.6 122.7C70.1 110.2 49.9 110.2 37.4 122.7l-25.1 25.1c-12.5 12.5-12.5 32.8 0 45.3l100.4 100.4L12.3 393.9c-12.5 12.5-12.5 32.8 0 45.3l64 64c12.5 12.5 32.8 12.5 45.3 0l100.4-100.4 100.4 100.4c12.5 12.5 32.8 12.5 45.3 0l25.1-25.1c12.5-12.5 12.5-32.8 0-45.3L292.4 332.5l-64.1-64.1z'/%3E%3C/svg%3E">
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -1621,12 +1621,13 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             showToast("Session Loadstring copied!", "fa-solid fa-copy");
         }
 
-        const WELCOME_MESSAGE = "⚡ **Welcome to ScriptForge** — The #1 AI Studio built specifically for **Roblox Executors** (Solara, Wave, Delta, MacSploit).\n\nAsk for any script (*Auto-Farm, Remote Spammers, Teleports, ESP, Speed Hacks*) and ScriptForge will write, test, and auto-fix Luau code live inside your Roblox player session!";
+        // Clean & Concise Welcome Message Matching Old Text Length Exactly
+        const WELCOME_MESSAGE = "Welcome to ScriptForge. Connect your Roblox executor (Solara, Wave, Delta, MacSploit) to generate and auto-fix Luau scripts in real-time.";
 
         let chats = JSON.parse(localStorage.getItem("SCRIPTFORGE_CHATS")) || JSON.parse(localStorage.getItem("ANTIGRAVITY_CHATS")) || [];
         
-        // Auto-update first welcome message if it contains the old welcome text
-        if (chats.length > 0 && chats[0].messages.length === 1 && chats[0].messages[0].role === 'ai' && (chats[0].messages[0].content.includes("Welcome to ScriptForge") || chats[0].messages[0].content.includes("Connect your Roblox executor"))) {
+        // Auto-update first welcome message to the new clean concise text
+        if (chats.length > 0 && chats[0].messages.length === 1 && chats[0].messages[0].role === 'ai' && chats[0].messages[0].content.includes("Welcome to ScriptForge")) {
             chats[0].messages[0].content = WELCOME_MESSAGE;
         }
 
