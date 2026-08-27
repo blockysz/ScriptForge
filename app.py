@@ -318,6 +318,14 @@ HTML_TEMPLATE = r"""
             transition: background-color 0.2s ease, color 0.2s ease;
         }
 
+        /* Pure Monochrome Text Classes */
+        .theme-text-main {
+            color: var(--text-primary) !important;
+        }
+        .theme-text-sub {
+            color: var(--text-secondary) !important;
+        }
+
         /* 100% Monochrome Button Utility Classes */
         .btn-theme-primary {
             background-color: var(--accent) !important;
@@ -958,9 +966,9 @@ HTML_TEMPLATE = r"""
             <div class="sidebar-section theme-card">
                 <div class="text-secondary mb-2 fw-bold" style="font-size: 0.7rem;"><i class="fa-solid fa-gamepad me-1"></i> GAME SESSION</div>
                 <div class="d-flex flex-column gap-1" style="font-size: 0.78rem;">
-                    <div class="d-flex justify-content-between"><span class="text-secondary">Player:</span> <span class="fw-bold text-primary" id="statPlayer">-</span></div>
-                    <div class="d-flex justify-content-between"><span class="text-secondary">Game:</span> <span class="fw-bold text-primary text-truncate" id="statGame" style="max-width: 120px;">-</span></div>
-                    <div class="d-flex justify-content-between"><span class="text-secondary">Remotes:</span> <span class="fw-bold text-primary" id="statRemotes">0</span></div>
+                    <div class="d-flex justify-content-between"><span class="text-secondary">Player:</span> <span class="fw-bold theme-text-main" id="statPlayer">-</span></div>
+                    <div class="d-flex justify-content-between"><span class="text-secondary">Game:</span> <span class="fw-bold theme-text-main text-truncate" id="statGame" style="max-width: 120px;">-</span></div>
+                    <div class="d-flex justify-content-between"><span class="text-secondary">Remotes:</span> <span class="fw-bold theme-text-main" id="statRemotes">0</span></div>
                 </div>
                 <button class="btn btn-sm btn-theme-outline w-100 mt-2" style="font-size: 0.75rem;" onclick="openExecutorModal()">
                     <i class="fa-solid fa-code me-1"></i> Get Client Script
@@ -1077,18 +1085,18 @@ HTML_TEMPLATE = r"""
                             <div class="avatar avatar-user mx-auto mb-2" style="width: 48px; height: 48px; font-size: 1.4rem;">
                                 <i class="fa-solid fa-user-check"></i>
                             </div>
-                            <h5 class="fw-bold text-primary mb-1" id="accountNameDisplay">Logged In User</h5>
+                            <h5 class="fw-bold theme-text-main mb-1" id="accountNameDisplay">Logged In User</h5>
                             <p class="text-secondary" style="font-size: 0.82rem;">Global Cloud Account Synced</p>
                         </div>
 
                         <div class="p-3 theme-card rounded border border-secondary mb-3" style="font-size: 0.82rem;">
                             <div class="d-flex justify-content-between mb-1">
                                 <span class="text-secondary">Session Token:</span>
-                                <span class="font-monospace text-primary text-truncate" id="accountTokenDisplay" style="max-width: 180px;">-</span>
+                                <span class="font-monospace theme-text-main text-truncate" id="accountTokenDisplay" style="max-width: 180px;">-</span>
                             </div>
                             <div class="d-flex justify-content-between">
                                 <span class="text-secondary">Cloud Sync:</span>
-                                <span class="text-primary fw-bold"><i class="fa-solid fa-cloud-arrow-up me-1"></i> Active</span>
+                                <span class="theme-text-main fw-bold"><i class="fa-solid fa-cloud-arrow-up me-1"></i> Active</span>
                             </div>
                         </div>
 
@@ -1104,11 +1112,11 @@ HTML_TEMPLATE = r"""
         <div class="modal-dialog">
             <div class="modal-content border-secondary">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title text-primary"><i class="fa-solid fa-circle-exclamation me-2"></i>OpenRouter API Key Required</h5>
+                    <h5 class="modal-title theme-text-main"><i class="fa-solid fa-circle-exclamation me-2"></i>OpenRouter API Key Required</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-primary mb-3" id="warningModalText" style="font-size: 0.92rem;">
+                    <p class="theme-text-main mb-3" id="warningModalText" style="font-size: 0.92rem;">
                         OpenRouter API key is not connected yet. Please add your key in Settings.
                     </p>
                     <div class="p-3 theme-card rounded border border-secondary text-secondary" style="font-size: 0.82rem;">
@@ -1128,12 +1136,12 @@ HTML_TEMPLATE = r"""
         <div class="modal-dialog modal-lg">
             <div class="modal-content border-secondary">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title text-primary"><i class="fa-solid fa-shield-halved me-2"></i>Connect Roblox Executor (Unique Session Token)</h5>
+                    <h5 class="modal-title theme-text-main"><i class="fa-solid fa-shield-halved me-2"></i>Connect Roblox Executor (Unique Session Token)</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <p style="font-size: 0.88rem;" class="text-secondary">
-                        Copy and execute your <strong class="text-primary">unique multi-line session loadstring</strong> below in your executor (<strong class="text-primary">Solara, Wave, Delta, MacSploit</strong>). Your session is protected by an isolated 32-character crypto key so no one else can hijack your executor session!
+                        Copy and execute your <strong class="theme-text-main">unique multi-line session loadstring</strong> below in your executor (<strong class="theme-text-main">Solara, Wave, Delta, MacSploit</strong>). Your session is protected by an isolated 32-character crypto key so no one else can hijack your executor session!
                     </p>
 
                     <div class="code-container my-3">
@@ -1169,7 +1177,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         <div class="modal-dialog modal-lg">
             <div class="modal-content border-secondary">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title text-primary"><i class="fa-solid fa-gear me-2"></i> API Keys & Studio Settings</h5>
+                    <h5 class="modal-title theme-text-main"><i class="fa-solid fa-gear me-2"></i> API Keys & Studio Settings</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body p-4">
@@ -1177,7 +1185,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                         <!-- Single Unified OpenRouter API Key Input -->
                         <div class="p-3 theme-card rounded border border-secondary">
                             <div class="d-flex justify-content-between align-items-center mb-1">
-                                <label class="form-label font-weight-bold text-primary mb-0">
+                                <label class="form-label font-weight-bold theme-text-main mb-0">
                                     <i class="fa-solid fa-globe me-2"></i> OpenRouter API Key
                                 </label>
                                 <a href="https://openrouter.ai/keys" target="_blank" class="btn btn-sm btn-theme-outline font-monospace py-0 px-2" style="font-size: 0.78rem;">
@@ -1192,10 +1200,10 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                         <div class="p-3 theme-card rounded border border-secondary">
                             <div class="d-flex justify-content-between align-items-center">
                                 <div>
-                                    <h6 class="mb-1 text-primary fw-bold"><i class="fa-solid fa-cloud-arrow-up me-2"></i> Settings Storage Scope</h6>
+                                    <h6 class="mb-1 theme-text-main fw-bold"><i class="fa-solid fa-cloud-arrow-up me-2"></i> Settings Storage Scope</h6>
                                     <span class="text-secondary" style="font-size: 0.8rem;" id="settingsSyncScopeText">Saved locally to browser storage</span>
                                 </div>
-                                <span class="badge theme-input border border-secondary text-primary font-monospace" id="settingsScopeBadge">Local Browser</span>
+                                <span class="badge theme-input border border-secondary theme-text-main font-monospace" id="settingsScopeBadge">Local Browser</span>
                             </div>
                         </div>
 
@@ -1365,11 +1373,11 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             if (loggedInUser) {
                 scopeText.innerText = `Synced to Cloud Account (${loggedInUser})`;
                 scopeBadge.innerText = "Account Synced";
-                scopeBadge.className = "badge theme-input text-primary font-monospace border border-secondary";
+                scopeBadge.className = "badge theme-input theme-text-main font-monospace border border-secondary";
             } else {
                 scopeText.innerText = "Saved locally to browser storage";
                 scopeBadge.innerText = "Local Browser";
-                scopeBadge.className = "badge theme-input text-primary font-monospace border border-secondary";
+                scopeBadge.className = "badge theme-input theme-text-main font-monospace border border-secondary";
             }
 
             const modal = new bootstrap.Modal(document.getElementById("settingsModal"));
@@ -1787,7 +1795,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             item.ondblclick = (e) => startInlineRename(chat.id, e);
             
             let gameTag = chat.game_name ? `<span class="chat-item-sub">${escapeHtml(chat.game_name)}</span>` : '';
-            let snippetTag = snippet ? `<span class="chat-item-sub text-primary">${escapeHtml(snippet)}</span>` : '';
+            let snippetTag = snippet ? `<span class="chat-item-sub theme-text-main">${escapeHtml(snippet)}</span>` : '';
 
             let titleHTML = '';
             if (editingChatId === chat.id) {
