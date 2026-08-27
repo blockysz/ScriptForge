@@ -746,20 +746,30 @@ HTML_TEMPLATE = r"""
             background-color: #121212 !important;
         }
 
-        /* Mode Dropup Animation Keyframes */
-        @keyframes modeDropupSlideFade {
-            from {
-                opacity: 0;
-                transform: translateY(8px) scale(0.95);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
+        /* Hardware Accelerated Smooth Dropup Fade & Slide Animation */
+        #modeInputDropup .dropdown-menu {
+            display: block !important;
+            visibility: hidden;
+            opacity: 0;
+            transform: translateY(12px) scale(0.94) !important;
+            transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.22s !important;
+            pointer-events: none;
+            z-index: 99999 !important;
+            position: absolute !important;
+            bottom: 100% !important;
+            top: auto !important;
+            right: 0 !important;
+            left: auto !important;
+            margin-bottom: 6px !important;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         #modeInputDropup .dropdown-menu.show {
-            animation: modeDropupSlideFade 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            visibility: visible !important;
+            opacity: 1 !important;
+            transform: translateY(0) scale(1) !important;
+            pointer-events: auto !important;
         }
 
         .code-container {
@@ -874,15 +884,15 @@ HTML_TEMPLATE = r"""
                 <div class="input-box">
                     <textarea id="userInput" placeholder="Ask ScriptForge to write a Luau script for your game..." oninput="autoGrow(this)" onkeydown="handleKeyDown(event)"></textarea>
 
-                    <!-- Animated & Larger Mode Selector Dropup Button Next to Send button -->
-                    <div class="dropup d-inline-block me-2 align-self-center" id="modeInputDropup" style="position: relative;">
-                        <button class="btn btn-sm text-secondary border-0 p-0 shadow-none d-flex align-items-center gap-1 dropdown-toggle" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" style="background: transparent; font-size: 0.82rem; color: #888888; cursor: pointer; border-radius: 4px; line-height: 1;">
+                    <!-- Animated & Larger Mode Selector Dropup Button with onmousedown preventDefault to prevent text selection -->
+                    <div class="dropup d-inline-block me-2 align-self-center" id="modeInputDropup" style="position: relative; user-select: none; -webkit-user-select: none;">
+                        <button class="btn btn-sm text-secondary border-0 p-0 shadow-none d-flex align-items-center gap-1 dropdown-toggle" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" onmousedown="event.preventDefault();" style="background: transparent; font-size: 0.82rem; color: #888888; cursor: pointer; border-radius: 4px; line-height: 1; user-select: none; -webkit-user-select: none;">
                             <i class="fa-solid fa-code" id="modePillIcon" style="font-size: 0.8rem; color: #888888;"></i> <span id="modePillLabel" style="font-size: 0.82rem; color: #888888;">coding mode</span>
                         </button>
-                        <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary p-2" style="font-size: 0.84rem; min-width: 175px; background: #141414 !important; border: 1px solid #282828 !important; right: 0; left: auto !important; bottom: 100% !important; top: auto !important; margin-bottom: 6px !important; transform: none !important;">
-                            <li><a class="dropdown-item py-2 px-3 text-secondary rounded" style="font-size: 0.84rem; color: #bbbbbb !important;" href="#" id="modeItemCoding" onclick="setAiMode('coding')"><i class="fa-solid fa-code me-2"></i> coding mode</a></li>
-                            <li><a class="dropdown-item py-2 px-3 text-secondary rounded" style="font-size: 0.84rem; color: #888888 !important;" href="#" id="modeItemThinking" onclick="setAiMode('thinking')"><i class="fa-solid fa-brain me-2"></i> thinking mode</a></li>
-                            <li><a class="dropdown-item py-2 px-3 text-secondary rounded" style="font-size: 0.84rem; color: #888888 !important;" href="#" id="modeItemChat" onclick="setAiMode('chat')"><i class="fa-solid fa-comments me-2"></i> general chat</a></li>
+                        <ul class="dropdown-menu dropdown-menu-dark shadow-lg border-secondary p-2" style="font-size: 0.84rem; min-width: 175px; background: #141414 !important; border: 1px solid #282828 !important; right: 0; left: auto !important; bottom: 100% !important; top: auto !important; margin-bottom: 6px !important; user-select: none; -webkit-user-select: none;">
+                            <li><a class="dropdown-item py-2 px-3 text-secondary rounded" style="font-size: 0.84rem; color: #bbbbbb !important; user-select: none;" href="#" id="modeItemCoding" onmousedown="event.preventDefault();" onclick="setAiMode('coding')"><i class="fa-solid fa-code me-2"></i> coding mode</a></li>
+                            <li><a class="dropdown-item py-2 px-3 text-secondary rounded" style="font-size: 0.84rem; color: #888888 !important; user-select: none;" href="#" id="modeItemThinking" onmousedown="event.preventDefault();" onclick="setAiMode('thinking')"><i class="fa-solid fa-brain me-2"></i> thinking mode</a></li>
+                            <li><a class="dropdown-item py-2 px-3 text-secondary rounded" style="font-size: 0.84rem; color: #888888 !important; user-select: none;" href="#" id="modeItemChat" onmousedown="event.preventDefault();" onclick="setAiMode('chat')"><i class="fa-solid fa-comments me-2"></i> general chat</a></li>
                         </ul>
                     </div>
 
