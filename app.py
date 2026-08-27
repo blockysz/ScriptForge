@@ -815,159 +815,34 @@ HTML_TEMPLATE = r"""
         </div>
     </div>
 
-    <!-- Executor Script Connection Modal -->
+    <!-- Executor Loader Modal -->
     <div class="modal fade" id="executorModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-md">
             <div class="modal-content bg-dark text-light border-secondary">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title"><i class="fa-solid fa-plug text-light me-2"></i>Connect Roblox Executor to ScriptForge</h5>
+                    <h5 class="modal-title"><i class="fa-solid fa-plug text-light me-2"></i>Connect Roblox Executor</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p style="font-size: 0.9rem;" class="text-secondary">
-                        Copy and execute the script below inside your Roblox Executor (<strong class="text-light">Solara, Wave, Delta, MacSploit</strong>). It will automatically sync your in-game player session and execute AI-generated scripts in real-time!
+                    <p style="font-size: 0.88rem;" class="text-secondary">
+                        Copy and execute this 2-line loadstring in your executor (<strong class="text-light">Solara, Wave, Delta, MacSploit</strong>). The modal will <strong class="text-light">close automatically</strong> as soon as your game connects!
                     </p>
 
                     <div class="code-container my-3">
                         <div class="code-header">
-                            <span><i class="fa-solid fa-code me-1"></i> roblox_client.lua</span>
+                            <span><i class="fa-solid fa-bolt me-1"></i> Quick Loadstring</span>
                             <div>
                                 <button class="btn btn-sm btn-light text-dark fw-bold py-0 px-2" style="font-size: 0.78rem;" onclick="copyExecutorScript()">
-                                    <i class="fa-solid fa-copy me-1"></i> Copy Client Script
+                                    <i class="fa-solid fa-copy me-1"></i> Copy Loadstring
                                 </button>
                             </div>
                         </div>
-                        <pre><code class="language-lua" id="executorScriptCode">-- ScriptForge Roblox Executor Client
--- Auto-generated for: ${window.location.origin}
-local SERVER_URL = "${window.location.origin}"
-
-local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local LocalPlayer = Players.LocalPlayer
-
-local requestFunc = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-if not requestFunc then
-    error("Your executor does not support HTTP requests!")
-end
-
-local function getGameContext()
-    local remotes = {}
-    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            table.insert(remotes, obj:GetFullName())
-        end
-    end
-
-    local leaderstats = {}
-    if LocalPlayer:FindFirstChild("leaderstats") then
-        for _, stat in ipairs(LocalPlayer.leaderstats:GetChildren()) do
-            leaderstats[stat.Name] = tostring(stat.Value)
-        end
-    end
-
-    local workspaceItems = {}
-    for _, item in ipairs(Workspace:GetChildren()) do
-        if item:IsA("Model") or item:IsA("Part") or item:IsA("Folder") then
-            table.insert(workspaceItems, item.Name)
-        end
-    end
-
-    return {
-        place_id = game.PlaceId,
-        player_name = LocalPlayer.Name,
-        remotes = remotes,
-        leaderstats = leaderstats,
-        workspace_items = workspaceItems
-    }
-end
-
-local function syncContext()
-    pcall(function()
-        requestFunc({
-            Url = SERVER_URL .. "/api/context",
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode(getGameContext())
-        })
-    end)
-end
-
-local function checkPendingScripts()
-    local success, response = pcall(function()
-        return requestFunc({
-            Url = SERVER_URL .. "/api/pending_script",
-            Method = "GET"
-        })
-    end)
-
-    if success and response and response.StatusCode == 200 then
-        local data = HttpService:JSONDecode(response.Body)
-        if data and data.has_script and data.code and data.code ~= "" then
-            print("[ScriptForge] 🚀 Executing script [" .. tostring(data.script_id) .. "]...")
-            
-            local func, compileErr = loadstring(data.code)
-            if not func then
-                requestFunc({
-                    Url = SERVER_URL .. "/api/report_error",
-                    Method = "POST",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = HttpService:JSONEncode({
-                        script_id = data.script_id,
-                        failed_code = data.code,
-                        error_message = "Syntax/Compile Error: " .. tostring(compileErr)
-                    })
-                })
-            else
-                local execSuccess, runtimeErr = xpcall(func, function(err)
-                    return debug.traceback(tostring(err))
-                end)
-
-                if execSuccess then
-                    requestFunc({
-                        Url = SERVER_URL .. "/api/report_success",
-                        Method = "POST",
-                        Headers = {["Content-Type"] = "application/json"},
-                        Body = HttpService:JSONEncode({
-                            script_id = data.script_id,
-                            code = data.code
-                        })
-                    })
-                else
-                    requestFunc({
-                        Url = SERVER_URL .. "/api/report_error",
-                        Method = "POST",
-                        Headers = {["Content-Type"] = "application/json"},
-                        Body = HttpService:JSONEncode({
-                            script_id = data.script_id,
-                            failed_code = data.code,
-                            error_message = "Runtime Error: " .. tostring(runtimeErr)
-                        })
-                    })
-                end
-            end
-        end
-    end
-end
-
-task.spawn(function()
-    while true do
-        syncContext()
-        checkPendingScripts()
-        task.wait(1.5)
-    end
-end)</code></pre>
+                        <pre><code class="language-lua" id="executorScriptCode">getgenv().SCRIPTFORGE_URL = "${window.location.origin}"
+loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/main/roblox_client.lua"))()</code></pre>
                     </div>
 
-                    <div class="p-3 bg-black rounded border border-secondary" style="font-size: 0.82rem;">
-                        <h6 class="fw-bold text-light mb-2"><i class="fa-solid fa-list-check me-2"></i>Quick Setup Instructions:</h6>
-                        <ol class="mb-0 ps-3 text-secondary">
-                            <li>Click <strong class="text-light">Copy Client Script</strong> above.</li>
-                            <li>Open your Roblox game and attach your executor (Solara, Wave, Delta, MacSploit).</li>
-                            <li>Paste the code into your executor tab and press <strong class="text-light">Execute</strong>.</li>
-                            <li>The status badge in the header will turn <span class="badge bg-light text-dark fw-bold">Connected</span>!</li>
-                        </ol>
+                    <div class="p-2 bg-black rounded border border-secondary text-secondary" style="font-size: 0.8rem;">
+                        <i class="fa-solid fa-circle-info text-light me-1"></i> Auto-close active: Once executed in Roblox, this window will dismiss automatically.
                     </div>
                 </div>
                 <div class="modal-footer border-secondary">
@@ -1092,131 +967,10 @@ end)</code></pre>
             showToast("Settings Saved!", "fa-solid fa-circle-check text-light");
         }
 
-        // Generate Client Luau Code for current domain
+        // Generate Ultra-Short GitHub loadstring for current domain
         function getFormattedExecutorScript() {
             const origin = window.location.origin;
-            return `-- ScriptForge Roblox Executor Client
--- Auto-generated for: ${origin}
-
-local SERVER_URL = "${origin}"
-
-local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local LocalPlayer = Players.LocalPlayer
-
-local requestFunc = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-if not requestFunc then
-    error("Your executor does not support HTTP requests!")
-end
-
-local function getGameContext()
-    local remotes = {}
-    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            table.insert(remotes, obj:GetFullName())
-        end
-    end
-
-    local leaderstats = {}
-    if LocalPlayer:FindFirstChild("leaderstats") then
-        for _, stat in ipairs(LocalPlayer.leaderstats:GetChildren()) do
-            leaderstats[stat.Name] = tostring(stat.Value)
-        end
-    end
-
-    local workspaceItems = {}
-    for _, item in ipairs(Workspace:GetChildren()) do
-        if item:IsA("Model") or item:IsA("Part") or item:IsA("Folder") then
-            table.insert(workspaceItems, item.Name)
-        end
-    end
-
-    return {
-        place_id = game.PlaceId,
-        player_name = LocalPlayer.Name,
-        remotes = remotes,
-        leaderstats = leaderstats,
-        workspace_items = workspaceItems
-    }
-end
-
-local function syncContext()
-    pcall(function()
-        requestFunc({
-            Url = SERVER_URL .. "/api/context",
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode(getGameContext())
-        })
-    end)
-end
-
-local function checkPendingScripts()
-    local success, response = pcall(function()
-        return requestFunc({
-            Url = SERVER_URL .. "/api/pending_script",
-            Method = "GET"
-        })
-    end)
-
-    if success and response and response.StatusCode == 200 then
-        local data = HttpService:JSONDecode(response.Body)
-        if data and data.has_script and data.code and data.code ~= "" then
-            print("[ScriptForge] 🚀 Executing script [" .. tostring(data.script_id) .. "]...")
-            
-            local func, compileErr = loadstring(data.code)
-            if not func then
-                requestFunc({
-                    Url = SERVER_URL .. "/api/report_error",
-                    Method = "POST",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = HttpService:JSONEncode({
-                        script_id = data.script_id,
-                        failed_code = data.code,
-                        error_message = "Syntax/Compile Error: " .. tostring(compileErr)
-                    })
-                })
-            else
-                local execSuccess, runtimeErr = xpcall(func, function(err)
-                    return debug.traceback(tostring(err))
-                end)
-
-                if execSuccess then
-                    requestFunc({
-                        Url = SERVER_URL .. "/api/report_success",
-                        Method = "POST",
-                        Headers = {["Content-Type"] = "application/json"},
-                        Body = HttpService:JSONEncode({
-                            script_id = data.script_id,
-                            code = data.code
-                        })
-                    })
-                else
-                    requestFunc({
-                        Url = SERVER_URL .. "/api/report_error",
-                        Method = "POST",
-                        Headers = {["Content-Type"] = "application/json"},
-                        Body = HttpService:JSONEncode({
-                            script_id = data.script_id,
-                            failed_code = data.code,
-                            error_message = "Runtime Error: " .. tostring(runtimeErr)
-                        })
-                    })
-                end
-            end
-        end
-    end
-end
-
-task.spawn(function()
-    while true do
-        syncContext()
-        checkPendingScripts()
-        task.wait(1.5)
-    end
-end)`;
+            return `getgenv().SCRIPTFORGE_URL = "${origin}"\nloadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/main/roblox_client.lua"))()`;
         }
 
         function openExecutorModal() {
@@ -1230,7 +984,7 @@ end)`;
         function copyExecutorScript() {
             const code = getFormattedExecutorScript();
             navigator.clipboard.writeText(code);
-            showToast("📋 Client Script copied to clipboard!", "fa-solid fa-copy text-light");
+            showToast("📋 Loadstring copied to clipboard!", "fa-solid fa-copy text-light");
         }
 
         // Local Chat Storage Management
@@ -1541,6 +1295,13 @@ end)`;
                     if (!wasConnected) {
                         wasConnected = true;
                         showToast(`🎮 Connected to ${data.player_name || "Roblox"}!`, "fa-solid fa-gamepad text-light");
+                        
+                        // Auto-close executor modal if open when connected
+                        const modalEl = document.getElementById("executorModal");
+                        if (modalEl && modalEl.classList.contains("show")) {
+                            const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                            if (modalInstance) modalInstance.hide();
+                        }
                     }
                 } else {
                     badge.className = 'status-badge status-offline';
