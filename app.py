@@ -26,7 +26,9 @@ def load_accounts():
     if os.path.exists(ACCOUNTS_FILE):
         try:
             with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                print(f"[ACCOUNTS] Loaded {len(data)} account(s) from {ACCOUNTS_FILE}")
+                return data
         except Exception as e:
             print(f"[ACCOUNTS] Error loading accounts file: {e}")
     return {}
@@ -36,8 +38,18 @@ def save_accounts(accounts):
     try:
         with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
             json.dump(accounts, f, indent=2)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except Exception:
+                pass
+        print(f"[ACCOUNTS] Saved {len(accounts)} account(s) to {ACCOUNTS_FILE}")
     except Exception as e:
         print(f"[ACCOUNTS] Error saving accounts file: {e}")
+
+# Initialize accounts file on startup if not present
+if not os.path.exists(ACCOUNTS_FILE):
+    save_accounts({})
 
 # Global Multi-Tenant State
 # Format: sessions_data[session_key] = { game_context, pending_scripts, script_sessions }
@@ -1119,7 +1131,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
                 const data = await res.json();
                 if (data.error) {
-                    showToast("Login Failed: " + data.error, "fa-solid fa-circle-exclamation text-secondary");
+                    showToast(data.error, "fa-solid fa-circle-exclamation text-secondary");
                 } else {
                     loggedInUser = data.user.username;
                     localStorage.setItem("SCRIPTFORGE_USER", loggedInUser);
@@ -1159,7 +1171,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
                 const data = await res.json();
                 if (data.error) {
-                    showToast("Registration Error: " + data.error, "fa-solid fa-circle-exclamation text-secondary");
+                    showToast(data.error, "fa-solid fa-circle-exclamation text-secondary");
                 } else {
                     loggedInUser = data.user.username;
                     localStorage.setItem("SCRIPTFORGE_USER", loggedInUser);
@@ -1847,7 +1859,7 @@ def auth_register():
     accounts = load_accounts()
     user_key = username.lower()
     if user_key in accounts:
-        return jsonify({"error": "Username already taken"}), 400
+        return jsonify({"error": f"Username '{username}' is already registered. Please click Log In."}), 400
 
     pwd_hash, salt = hash_password(password)
     
@@ -1887,12 +1899,12 @@ def auth_login():
     user_data = accounts.get(user_key)
 
     if not user_data:
-        print(f"[AUTH] Login failed: user '{user_key}' not found in accounts.")
-        return jsonify({"error": "Invalid username or password"}), 401
+        print(f"[AUTH] Login failed: user '{user_key}' not found in accounts. Known users: {list(accounts.keys())}")
+        return jsonify({"error": f"Account '{username}' does not exist. Click Register to create it!"}), 401
 
     if not verify_password(password, user_data["password_hash"], user_data["salt"]):
-        print(f"[AUTH] Login failed: invalid password for user '{user_key}'.")
-        return jsonify({"error": "Invalid username or password"}), 401
+        print(f"[AUTH] Login failed: incorrect password for user '{user_key}'.")
+        return jsonify({"error": "Incorrect password. Please try again."}), 401
 
     print(f"[AUTH] Login success for user '{user_key}'.")
     return jsonify({
