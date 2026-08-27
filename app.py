@@ -18,23 +18,73 @@ if hasattr(sys.stderr, 'reconfigure'):
 app = Flask(__name__)
 CORS(app)
 
-# Persistent Accounts & Data Storage File
+# Persistent Local & Cloud Storage Setup
 ACCOUNTS_FILE = os.path.join(os.path.dirname(__file__), "accounts.json")
+KV_URL = os.getenv("KV_REST_API_URL") or os.getenv("UPSTASH_REDIS_REST_URL")
+KV_TOKEN = os.getenv("KV_REST_API_TOKEN") or os.getenv("UPSTASH_REDIS_REST_TOKEN")
+
+accounts_in_memory = {}
 
 def load_accounts():
-    """Load user accounts safely from JSON database on disk."""
+    """Load user accounts safely from Vercel KV / Upstash Redis or local JSON database."""
+    global accounts_in_memory
+
+    # 1. Try Vercel KV / Upstash Redis if configured
+    if KV_URL and KV_TOKEN:
+        try:
+            url = f"{KV_URL.rstrip('/')}/get/scriptforge_accounts"
+            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {KV_TOKEN}"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                val = res.get("result")
+                if val:
+                    accounts_in_memory = json.loads(val)
+                    print(f"[ACCOUNTS] Loaded {len(accounts_in_memory)} account(s) from Vercel KV / Upstash Redis")
+                    return accounts_in_memory
+        except Exception as e:
+            print(f"[ACCOUNTS] Error reading Vercel KV: {e}")
+
+    # 2. Fallback to in-memory cache
+    if accounts_in_memory:
+        return accounts_in_memory
+
+    # 3. Fallback to local JSON file
     if os.path.exists(ACCOUNTS_FILE):
         try:
             with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                print(f"[ACCOUNTS] Loaded {len(data)} account(s) from {ACCOUNTS_FILE}")
+                accounts_in_memory = data
+                print(f"[ACCOUNTS] Loaded {len(data)} account(s) from local file: {ACCOUNTS_FILE}")
                 return data
         except Exception as e:
             print(f"[ACCOUNTS] Error loading accounts file: {e}")
-    return {}
+
+    return accounts_in_memory
 
 def save_accounts(accounts):
-    """Save user accounts safely to JSON database on disk."""
+    """Save user accounts safely to Vercel KV / Upstash Redis and local JSON database."""
+    global accounts_in_memory
+    accounts_in_memory = accounts
+
+    # 1. Try Vercel KV / Upstash Redis if configured
+    if KV_URL and KV_TOKEN:
+        try:
+            url = f"{KV_URL.rstrip('/')}/set/scriptforge_accounts"
+            payload = json.dumps(accounts)
+            req = urllib.request.Request(
+                url,
+                data=payload.encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {KV_TOKEN}",
+                    "Content-Type": "application/json"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                print(f"[ACCOUNTS] Saved {len(accounts)} account(s) to Vercel KV / Upstash Redis!")
+        except Exception as e:
+            print(f"[ACCOUNTS] Error saving to Vercel KV: {e}")
+
+    # 2. Try saving to local JSON disk
     try:
         with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
             json.dump(accounts, f, indent=2)
@@ -43,16 +93,13 @@ def save_accounts(accounts):
                 os.fsync(f.fileno())
             except Exception:
                 pass
-        print(f"[ACCOUNTS] Saved {len(accounts)} account(s) to {ACCOUNTS_FILE}")
+        print(f"[ACCOUNTS] Saved {len(accounts)} account(s) to local file: {ACCOUNTS_FILE}")
+    except OSError as e:
+        print(f"[ACCOUNTS] Running on Vercel ephemeral read-only filesystem: {e}")
     except Exception as e:
-        print(f"[ACCOUNTS] Error saving accounts file: {e}")
-
-# Initialize accounts file on startup if not present
-if not os.path.exists(ACCOUNTS_FILE):
-    save_accounts({})
+        print(f"[ACCOUNTS] Error saving local accounts file: {e}")
 
 # Global Multi-Tenant State
-# Format: sessions_data[session_key] = { game_context, pending_scripts, script_sessions }
 sessions_data = {}
 game_name_cache = {}
 
