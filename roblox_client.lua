@@ -21,40 +21,65 @@ if not requestFunc then
     error("[ScriptForge] Your executor does not support HTTP requests!")
 end
 
-local function getGameContext()
+local lastFullSync = 0
+
+local function getRemotesList()
     local remotes = {}
-    for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            table.insert(remotes, obj:GetFullName())
+    pcall(function()
+        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                table.insert(remotes, obj:GetFullName())
+            end
         end
-    end
+    end)
+    return remotes
+end
 
+local function getLeaderstats()
     local leaderstats = {}
-    if LocalPlayer:FindFirstChild("leaderstats") then
-        for _, stat in ipairs(LocalPlayer.leaderstats:GetChildren()) do
-            leaderstats[stat.Name] = tostring(stat.Value)
+    pcall(function()
+        if LocalPlayer:FindFirstChild("leaderstats") then
+            for _, stat in ipairs(LocalPlayer.leaderstats:GetChildren()) do
+                leaderstats[stat.Name] = tostring(stat.Value)
+            end
         end
-    end
+    end)
+    return leaderstats
+end
 
+local function getWorkspaceItems()
     local workspaceItems = {}
-    for _, item in ipairs(Workspace:GetChildren()) do
-        if item:IsA("Model") or item:IsA("Part") or item:IsA("Folder") then
-            table.insert(workspaceItems, item.Name)
+    pcall(function()
+        for _, item in ipairs(Workspace:GetChildren()) do
+            if item:IsA("Model") or item:IsA("Part") or item:IsA("Folder") then
+                table.insert(workspaceItems, item.Name)
+            end
         end
-    end
-
-    return {
-        session_key = SESSION_KEY,
-        place_id = game.PlaceId,
-        player_name = LocalPlayer.Name,
-        remotes = remotes,
-        leaderstats = leaderstats,
-        workspace_items = workspaceItems
-    }
+    end)
+    return workspaceItems
 end
 
 local function syncContext()
     pcall(function()
+        local now = tick()
+        local isFull = (now - lastFullSync > 12)
+        if isFull then
+            lastFullSync = now
+        end
+
+        local payload = {
+            session_key = SESSION_KEY,
+            place_id = game.PlaceId,
+            player_name = LocalPlayer.Name,
+            connected = true
+        }
+
+        if isFull then
+            payload.remotes = getRemotesList()
+            payload.leaderstats = getLeaderstats()
+            payload.workspace_items = getWorkspaceItems()
+        end
+
         requestFunc({
             Url = SERVER_URL .. "/api/context",
             Method = "POST",
@@ -62,7 +87,7 @@ local function syncContext()
                 ["Content-Type"] = "application/json",
                 ["X-Session-Key"] = SESSION_KEY
             },
-            Body = HttpService:JSONEncode(getGameContext())
+            Body = HttpService:JSONEncode(payload)
         })
     end)
 end
@@ -139,10 +164,17 @@ local function checkPendingScripts()
     end
 end
 
+-- Independent non-blocking loops for heartbeat and script polling
 task.spawn(function()
     while true do
         syncContext()
+        task.wait(2)
+    end
+end)
+
+task.spawn(function()
+    while true do
         checkPendingScripts()
-        task.wait(1.5)
+        task.wait(1)
     end
 end)

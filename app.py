@@ -24,6 +24,10 @@ KV_URL = os.getenv("KV_REST_API_URL") or os.getenv("UPSTASH_REDIS_REST_URL")
 KV_TOKEN = os.getenv("KV_REST_API_TOKEN") or os.getenv("UPSTASH_REDIS_REST_TOKEN")
 
 accounts_in_memory = {}
+sessions_data = {}
+game_name_cache = {}
+
+openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
 
 def load_accounts():
     """Load user accounts safely from Vercel KV / Upstash Redis or local JSON database."""
@@ -91,11 +95,61 @@ def save_accounts(accounts):
     except Exception as e:
         print(f"[ACCOUNTS] Error saving local accounts file: {e}")
 
-# Global Multi-Tenant State
-sessions_data = {}
-game_name_cache = {}
+def get_session_store(key):
+    """Get or initialize isolated session data for a given session_key across Vercel Lambdas."""
+    global sessions_data
 
-openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if KV_URL and KV_TOKEN:
+        try:
+            url = f"{KV_URL.rstrip('/')}/get/sf_sess_{key}"
+            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {KV_TOKEN}"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                val = res.get("result")
+                if val:
+                    data = json.loads(val)
+                    sessions_data[key] = data
+                    return data
+        except Exception as e:
+            print(f"[SESSION_KV] Error loading session KV: {e}")
+
+    if key not in sessions_data:
+        sessions_data[key] = {
+            "game_context": {
+                "connected": False,
+                "last_seen": 0,
+                "place_id": 0,
+                "player_name": "Disconnected",
+                "remotes": [],
+                "leaderstats": {},
+                "workspace_items": []
+            },
+            "pending_scripts": [],
+            "script_sessions": {}
+        }
+    return sessions_data[key]
+
+def save_session_store(key, store_data):
+    """Save session data to memory and sync across Vercel serverless instances via KV."""
+    global sessions_data
+    sessions_data[key] = store_data
+
+    if KV_URL and KV_TOKEN:
+        try:
+            url = f"{KV_URL.rstrip('/')}/set/sf_sess_{key}"
+            payload = json.dumps(store_data)
+            req = urllib.request.Request(
+                url,
+                data=payload.encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {KV_TOKEN}",
+                    "Content-Type": "application/json"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                pass
+        except Exception as e:
+            print(f"[SESSION_KV] Error saving session KV: {e}")
 
 @app.errorhandler(Exception)
 def handle_exception(e):
@@ -123,24 +177,6 @@ def get_session_key(req):
         data = req.get_json(silent=True) or {}
         key = data.get("session_key")
     return key or "default_session"
-
-def get_session_store(key):
-    """Get or initialize isolated session data for a given session_key."""
-    if key not in sessions_data:
-        sessions_data[key] = {
-            "game_context": {
-                "connected": False,
-                "last_seen": None,
-                "place_id": 0,
-                "player_name": "Disconnected",
-                "remotes": [],
-                "leaderstats": {},
-                "workspace_items": []
-            },
-            "pending_scripts": [],
-            "script_sessions": {}
-        }
-    return sessions_data[key]
 
 def fetch_game_name(place_id):
     """Fetch official Roblox game name by place ID with caching."""
@@ -235,7 +271,7 @@ def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, o
         """
 
     m_name = selected_model.replace("openrouter/", "")
-    key = openrouter_key or os.getenv("OPENROUTER_API_KEY", "")
+    key = openrouter_key or os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
     print(f"[AI PIPELINE] Generating response via OpenRouter: {m_name} (Mode: {ai_mode})")
 
     return call_openai_compatible("https://openrouter.ai/api/v1/chat/completions", key, m_name, system_instruction, user_prompt, history, game_ctx)
@@ -2148,8 +2184,10 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                             clearInterval(pollInterval);
                             delete activePollingScriptIds[scriptId];
 
-                            if (statusData.final_code) {
-                                msg.content = statusData.reply || `✅ **Script Verified (0 Errors)**\n\`\`\`luau\n${statusData.final_code}\n\`\`\``;
+                            if (statusData.reply) {
+                                msg.content = statusData.reply;
+                            } else if (statusData.final_code) {
+                                msg.content = `✅ **Script Verified (0 Errors)**\n\`\`\`luau\n${statusData.final_code}\n\`\`\``;
                             }
                         }
 
@@ -2197,7 +2235,12 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 await fetch('/api/queue_script', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({session_key: getSessionKey(), code: code})
+                    body: JSON.stringify({
+                        session_key: getSessionKey(),
+                        code: code,
+                        openrouter_key: openrouterApiKey,
+                        model: selectedModel
+                    })
                 });
                 showToast("Script queued to Roblox Executor", "fa-solid fa-rocket");
             } catch(e) {
@@ -2325,12 +2368,12 @@ def set_key():
 
 @app.route("/api/status", methods=["GET"])
 def get_status():
-    import time
     s_key = get_session_key(request)
     store = get_session_store(s_key)
     ctx = store["game_context"]
-    is_connected = ctx.get("last_seen") and (time.time() - ctx["last_seen"] < 10)
+    is_connected = ctx.get("last_seen") and (time.time() - ctx["last_seen"] < 25)
     ctx["connected"] = is_connected
+    save_session_store(s_key, store)
     return jsonify(ctx)
 
 @app.route("/api/get_game_name/<place_id>", methods=["GET"])
@@ -2361,20 +2404,24 @@ def generate_title_route():
 
 @app.route("/api/context", methods=["POST"])
 def update_context():
-    import time
     data = request.json or {}
     s_key = get_session_key(request)
     store = get_session_store(s_key)
     
-    store["game_context"].update({
-        "connected": True,
-        "last_seen": time.time(),
-        "place_id": data.get("place_id", 0),
-        "player_name": data.get("player_name", "Unknown"),
-        "remotes": data.get("remotes", []),
-        "leaderstats": data.get("leaderstats", {}),
-        "workspace_items": data.get("workspace_items", [])
-    })
+    ctx = store["game_context"]
+    ctx["connected"] = True
+    ctx["last_seen"] = time.time()
+    ctx["place_id"] = data.get("place_id", ctx.get("place_id", 0))
+    ctx["player_name"] = data.get("player_name", ctx.get("player_name", "Unknown"))
+    
+    if "remotes" in data:
+        ctx["remotes"] = data["remotes"]
+    if "leaderstats" in data:
+        ctx["leaderstats"] = data["leaderstats"]
+    if "workspace_items" in data:
+        ctx["workspace_items"] = data["workspace_items"]
+
+    save_session_store(s_key, store)
     return jsonify({"status": "synced"})
 
 @app.route("/api/chat", methods=["POST"])
@@ -2405,7 +2452,7 @@ def chat():
 
     # Check executor connection state
     ctx = store.get("game_context", {})
-    is_executor_connected = ctx.get("connected", False) and (time.time() - ctx.get("last_seen", 0) < 10)
+    is_executor_connected = ctx.get("connected", False) and (time.time() - ctx.get("last_seen", 0) < 25)
 
     # ONLY queue and test scripts if ALL conditions are met:
     # 1. Mode is "coding"
@@ -2429,11 +2476,15 @@ def chat():
             "original_reply": reply,
             "final_code": extracted_code,
             "reply": testing_reply,
-            "history": history
+            "history": history,
+            "openrouter_key": openrouter_key,
+            "model": selected_model,
+            "ai_mode": ai_mode
         }
 
         store["pending_scripts"].append({"id": script_id, "code": extracted_code})
         status = "verifying"
+        save_session_store(s_key, store)
 
         return jsonify({
             "reply": testing_reply,
@@ -2443,6 +2494,7 @@ def chat():
         })
 
     # In Thinking mode, Chat mode, or when disconnected: simply display the response without executor execution
+    save_session_store(s_key, store)
     return jsonify({
         "reply": reply,
         "script_id": None,
@@ -2472,7 +2524,11 @@ def report_success():
         sess["logs"].append("Verification Passed: Script executed with 0 errors in game!")
         sess["status"] = "verified"
         sess["final_code"] = code
-        sess["reply"] = f"Script Verified (0 Errors)\n```luau\n{code}\n```"
+        if sess.get("original_reply"):
+            sess["reply"] = sess["original_reply"]
+        else:
+            sess["reply"] = f"✅ **Script Verified (0 Errors)**\n```luau\n{code}\n```"
+        save_session_store(s_key, store)
         print(f"[VERIFIED SUCCESS] Session [{s_key}] Script [{script_id}] passed test with 0 errors!")
 
     return jsonify({"status": "acknowledged"})
@@ -2495,7 +2551,10 @@ def report_error():
             "auto_fix": True,
             "logs": [],
             "reply": "",
-            "history": []
+            "history": [],
+            "openrouter_key": "",
+            "model": "openrouter/anthropic/claude-3.5-sonnet",
+            "ai_mode": "coding"
         }
         store["script_sessions"][script_id] = sess
 
@@ -2507,6 +2566,7 @@ def report_error():
         sess["logs"].append("Max auto-fix attempts reached (3/3). Stopping loop.")
         sess["status"] = "failed"
         sess["reply"] = f"Script Auto-Fix Limit Reached (Error: {error_msg})\n```luau\n{failed_code}\n```"
+        save_session_store(s_key, store)
         return jsonify({"status": "max_attempts_reached"}), 400
 
     sess["logs"].append(f"Auto-Fixing Error... (Attempt {attempts}/3)...")
@@ -2525,20 +2585,25 @@ def report_error():
     Please fix all errors in this code and return the corrected script inside a ```luau ... ``` code block.
     """
 
-    openrouter_key = os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
-    selected_model = "openrouter/anthropic/claude-3.5-sonnet"
+    openrouter_key = sess.get("openrouter_key") or os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
+    selected_model = sess.get("model") or "openrouter/anthropic/claude-3.5-sonnet"
+    ai_mode = sess.get("ai_mode") or "coding"
 
-    reply, err = generate_ai_response(debug_prompt, selected_model, sess.get("history", []), store["game_context"], openrouter_key=openrouter_key, ai_mode="coding")
+    reply, err = generate_ai_response(debug_prompt, selected_model, sess.get("history", []), store["game_context"], openrouter_key=openrouter_key, ai_mode=ai_mode)
 
     if reply:
         fixed_code = extract_luau_code(reply)
         if fixed_code:
             sess["logs"].append(f"Queued fixed script (Attempt {attempts}/3) for verification...")
+            sess["final_code"] = fixed_code
+            sess["original_reply"] = reply
             store["pending_scripts"].append({"id": script_id, "code": fixed_code})
+            save_session_store(s_key, store)
             return jsonify({"status": "auto_fixed", "new_code": fixed_code, "attempt": attempts})
 
     sess["status"] = "failed"
     sess["logs"].append("AI auto-fix failed to produce a valid solution.")
+    save_session_store(s_key, store)
     return jsonify({"error": "Auto-fix failed"}), 500
 
 @app.route("/api/get_autofix_logs", methods=["GET"])
@@ -2552,9 +2617,26 @@ def queue_script():
     store = get_session_store(s_key)
 
     code = data.get("code")
+    openrouter_key = data.get("openrouter_key", "")
+    model = data.get("model", "")
+
     if code:
         script_id = f"manual_{int(time.time()*1000)}"
         store["pending_scripts"].append({"id": script_id, "code": code})
+        store["script_sessions"][script_id] = {
+            "status": "verifying",
+            "attempts": 0,
+            "auto_fix": True,
+            "logs": ["Queued manually for execution..."],
+            "original_reply": f"Manual Script Execution:\n```luau\n{code}\n```",
+            "final_code": code,
+            "reply": "Executing manually queued script...",
+            "history": [],
+            "openrouter_key": openrouter_key,
+            "model": model or "openrouter/anthropic/claude-3.5-sonnet",
+            "ai_mode": "coding"
+        }
+        save_session_store(s_key, store)
         return jsonify({"status": "queued"})
     return jsonify({"error": "No code provided"}), 400
 
@@ -2565,6 +2647,7 @@ def get_pending_script():
 
     if store["pending_scripts"]:
         item = store["pending_scripts"].pop(0)
+        save_session_store(s_key, store)
         return jsonify({"has_script": True, "script_id": item["id"], "code": item["code"]})
     return jsonify({"has_script": False, "code": "", "script_id": ""})
 
