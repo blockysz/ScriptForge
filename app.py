@@ -305,6 +305,26 @@ def call_openai_compatible(api_url, api_key, model_name, system_instruction, use
     except Exception as e:
         return None, str(e)
 
+def clean_context_script(code):
+    """Sanitize reference executor scripts by removing webhooks, external Discord URLs, http requests, and non-essential noise."""
+    if not code:
+        return ""
+    
+    # Strip Discord webhook URLs & generic webhooks
+    code = re.sub(r'https?://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/[^\s"\']+', '[REDACTED_WEBHOOK]', code, flags=re.IGNORECASE)
+    code = re.sub(r'https?://[^\s"\']+', '[REDACTED_URL]', code)
+
+    cleaned_lines = []
+    for line in code.splitlines():
+        l = line.strip().lower()
+        # Skip lines that deal with sending discord notifications, webhooks, or external tracking
+        if any(keyword in l for keyword in ['webhook', 'syn.request', 'http_request', 'httppost', 'request(', 'game:httpget', 'setclipboard']):
+            if 'discord' in l or 'webhook' in l or 'http' in l:
+                continue
+        cleaned_lines.append(line)
+    
+    return "\n".join(cleaned_lines).strip()
+
 def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, openrouter_key="", ai_mode="coding", use_context=True):
     """UNIFIED AI generation engine powering all models strictly through OpenRouter."""
     
@@ -312,8 +332,17 @@ def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, o
         p_id = str(game_ctx.get("place_id"))
         all_ref_scripts = load_context_scripts()
         if p_id in all_ref_scripts and all_ref_scripts[p_id]:
-            game_ctx = dict(game_ctx)
-            game_ctx["place_reference_executor_scripts"] = all_ref_scripts[p_id]
+            cleaned_refs = []
+            for item in all_ref_scripts[p_id]:
+                c_code = clean_context_script(item.get("code", ""))
+                if c_code:
+                    cleaned_refs.append({
+                        "title": item.get("title", "Reference Script"),
+                        "essential_code": c_code
+                    })
+            if cleaned_refs:
+                game_ctx = dict(game_ctx)
+                game_ctx["place_reference_executor_scripts"] = cleaned_refs
 
     if ai_mode == "thinking":
         system_instruction = """
@@ -334,7 +363,7 @@ def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, o
         You are ScriptForge's expert Luau Scripting Assistant connected directly to a live Roblox game player session.
         Your primary goal is writing, testing, auto-fixing, and optimizing valid Luau code inside ```luau ... ``` blocks suitable for execution.
         Use exact Remote names, leaderstats, and workspace paths from live context.
-        If reference executor scripts are provided in live game context, study how remotes and functions are called in those scripts to write accurate, working Luau code.
+        If reference executor scripts are provided in `place_reference_executor_scripts`, focus strictly on essential game remote calls, argument structures, and internal game functions. Ignore any external logic, webhooks, or third-party requests.
         """
 
     m_name = selected_model.replace("openrouter/", "")
