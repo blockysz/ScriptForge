@@ -20,11 +20,13 @@ CORS(app)
 
 # Persistent Local & Cloud Storage Setup
 ACCOUNTS_FILE = os.path.join(os.path.dirname(__file__), "accounts.json")
+CONTEXT_SCRIPTS_FILE = os.path.join(os.path.dirname(__file__), "context_scripts.json")
 KV_URL = os.getenv("KV_REST_API_URL") or os.getenv("UPSTASH_REDIS_REST_URL")
 KV_TOKEN = os.getenv("KV_REST_API_TOKEN") or os.getenv("UPSTASH_REDIS_REST_TOKEN")
 
 accounts_in_memory = {}
 sessions_data = {}
+context_scripts_in_memory = {}
 game_name_cache = {}
 
 openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
@@ -94,6 +96,63 @@ def save_accounts(accounts):
         print(f"[ACCOUNTS] Read-only filesystem warning: {e}")
     except Exception as e:
         print(f"[ACCOUNTS] Error saving local accounts file: {e}")
+
+def load_context_scripts():
+    """Load place ID script context references from Vercel KV or local JSON."""
+    global context_scripts_in_memory
+    if KV_URL and KV_TOKEN:
+        try:
+            url = f"{KV_URL.rstrip('/')}/get/scriptforge_context_scripts"
+            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {KV_TOKEN}"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                val = res.get("result")
+                if val:
+                    context_scripts_in_memory = json.loads(val)
+                    return context_scripts_in_memory
+        except Exception as e:
+            print(f"[CONTEXT_SCRIPTS] Error reading Vercel KV: {e}")
+
+    if context_scripts_in_memory:
+        return context_scripts_in_memory
+
+    if os.path.exists(CONTEXT_SCRIPTS_FILE):
+        try:
+            with open(CONTEXT_SCRIPTS_FILE, "r", encoding="utf-8") as f:
+                context_scripts_in_memory = json.load(f)
+                return context_scripts_in_memory
+        except Exception as e:
+            print(f"[CONTEXT_SCRIPTS] Error reading file: {e}")
+
+    return context_scripts_in_memory
+
+def save_context_scripts(scripts_data):
+    """Save place ID script context references to Vercel KV and local JSON."""
+    global context_scripts_in_memory
+    context_scripts_in_memory = scripts_data
+
+    if KV_URL and KV_TOKEN:
+        try:
+            url = f"{KV_URL.rstrip('/')}/set/scriptforge_context_scripts"
+            payload = json.dumps(scripts_data)
+            req = urllib.request.Request(
+                url,
+                data=payload.encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {KV_TOKEN}",
+                    "Content-Type": "application/json"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                print(f"[CONTEXT_SCRIPTS] Saved to Vercel KV!")
+        except Exception as e:
+            print(f"[CONTEXT_SCRIPTS] Error saving to Vercel KV: {e}")
+
+    try:
+        with open(CONTEXT_SCRIPTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(scripts_data, f, indent=2)
+    except Exception as e:
+        print(f"[CONTEXT_SCRIPTS] Error saving local file: {e}")
 
 def get_session_store(key):
     """Get or initialize isolated session data for a given session_key across Vercel Lambdas."""
@@ -246,9 +305,16 @@ def call_openai_compatible(api_url, api_key, model_name, system_instruction, use
     except Exception as e:
         return None, str(e)
 
-def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, openrouter_key="", ai_mode="coding"):
+def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, openrouter_key="", ai_mode="coding", use_context=True):
     """UNIFIED AI generation engine powering all models strictly through OpenRouter."""
     
+    if use_context and game_ctx and game_ctx.get("place_id"):
+        p_id = str(game_ctx.get("place_id"))
+        all_ref_scripts = load_context_scripts()
+        if p_id in all_ref_scripts and all_ref_scripts[p_id]:
+            game_ctx = dict(game_ctx)
+            game_ctx["place_reference_executor_scripts"] = all_ref_scripts[p_id]
+
     if ai_mode == "thinking":
         system_instruction = """
         You are ScriptForge's Deep Reasoning & Architecture Assistant connected directly to a live Roblox game player session.
@@ -268,11 +334,12 @@ def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, o
         You are ScriptForge's expert Luau Scripting Assistant connected directly to a live Roblox game player session.
         Your primary goal is writing, testing, auto-fixing, and optimizing valid Luau code inside ```luau ... ``` blocks suitable for execution.
         Use exact Remote names, leaderstats, and workspace paths from live context.
+        If reference executor scripts are provided in live game context, study how remotes and functions are called in those scripts to write accurate, working Luau code.
         """
 
     m_name = selected_model.replace("openrouter/", "")
     key = openrouter_key or os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
-    print(f"[AI PIPELINE] Generating response via OpenRouter: {m_name} (Mode: {ai_mode})")
+    print(f"[AI PIPELINE] Generating response via OpenRouter: {m_name} (Mode: {ai_mode}, Use Context: {use_context})")
 
     return call_openai_compatible("https://openrouter.ai/api/v1/chat/completions", key, m_name, system_instruction, user_prompt, history, game_ctx)
 
@@ -971,6 +1038,11 @@ HTML_TEMPLATE = r"""
         </div>
 
         <div class="d-flex align-items-center gap-2">
+            <!-- Exclusive Context Management Modal Button for User 'Ween' -->
+            <button class="btn btn-sm btn-theme-outline" id="weenContextBtn" onclick="openWeenContextModal()" style="display: none;" title="Manage Place Executor Script Contexts">
+                <i class="fa-solid fa-book-bookmark me-1"></i> Script Contexts
+            </button>
+
             <button class="btn btn-sm btn-theme-outline" onclick="openAuthModal()" id="authHeaderBtn">
                 <i class="fa-solid fa-user me-1"></i> Login / Sign Up
             </button>
@@ -1069,6 +1141,13 @@ HTML_TEMPLATE = r"""
                             <span><i class="fa-solid fa-wrench me-1"></i> Auto-Fix</span>
                         </div>
 
+                        <!-- Use Context Toggle with 1-Sentence Hover Tooltip Info Button -->
+                        <div class="custom-toggle-pill active" id="useContextPill" onclick="toggleUseContext()">
+                            <span class="toggle-knob"></span>
+                            <span><i class="fa-solid fa-book-open me-1"></i> Use Context</span>
+                            <i class="fa-solid fa-circle-info ms-1 text-secondary" style="font-size: 0.76rem;" title="Includes saved executor reference scripts for the current game in the AI prompt to improve script accuracy." data-bs-toggle="tooltip"></i>
+                        </div>
+
                         <!-- Clean Anchored Upward Model Selector Dropdown with static CSS positioning -->
                         <div class="dropup d-inline-block" id="modelDropup">
                             <div class="custom-toggle-pill active dropdown-toggle" data-bs-toggle="dropdown" data-bs-display="static" aria-expanded="false" style="cursor: pointer;" onclick="renderModelDropupList()">
@@ -1082,6 +1161,52 @@ HTML_TEMPLATE = r"""
 
                     <div class="text-secondary" style="font-size: 0.78rem;">
                         <i class="fa-solid fa-shield-halved me-1"></i> Studio Mode
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Exclusive Place Executor Script Context Modal for User 'Ween' -->
+    <div class="modal fade" id="weenContextModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title theme-text-main"><i class="fa-solid fa-book-bookmark me-2"></i> Manage Game Executor Script Contexts (Ween Only)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" style="max-height: 75vh; overflow-y: auto;">
+                    <p class="text-secondary" style="font-size: 0.85rem;">
+                        Add existing reference scripts for specific Roblox Place IDs. When enabled via <strong>Use Context</strong>, the AI uses these script examples to learn exact remote calls and functions for that game.
+                    </p>
+                    
+                    <!-- Form to Add/Edit Reference Script -->
+                    <div class="p-3 theme-card rounded border border-secondary mb-4">
+                        <h6 class="theme-text-main fw-bold mb-3" id="weenFormTitle"><i class="fa-solid fa-plus me-1"></i> Add New Script Context</h6>
+                        <input type="hidden" id="weenScriptId">
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label text-secondary" style="font-size: 0.8rem;">Place ID</label>
+                                <input type="number" id="weenPlaceIdInput" class="form-control theme-input border-secondary" placeholder="e.g. 185655149">
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label text-secondary" style="font-size: 0.8rem;">Script Title / Description</label>
+                                <input type="text" id="weenTitleInput" class="form-control theme-input border-secondary" placeholder="e.g. Auto-Farm Remote Call Example">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-secondary" style="font-size: 0.8rem;">Luau Script Example</label>
+                            <textarea id="weenCodeInput" class="form-control theme-input font-monospace border-secondary" rows="5" placeholder="-- Paste example executor script or remote calls here"></textarea>
+                        </div>
+                        <div class="d-flex justify-content-end gap-2">
+                            <button class="btn btn-sm btn-theme-outline" onclick="resetWeenForm()">Cancel</button>
+                            <button class="btn btn-sm btn-theme-primary px-3" onclick="saveWeenContextScript()"><i class="fa-solid fa-floppy-disk me-1"></i> Save Context Script</button>
+                        </div>
+                    </div>
+
+                    <!-- List of Existing Script Contexts Grouped by Place ID -->
+                    <div id="weenScriptContextsList">
+                        <!-- Dynamically Rendered -->
                     </div>
                 </div>
             </div>
@@ -1317,6 +1442,14 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         }
         setTimeout(generateFontAwesomeFavicon, 500);
 
+        // Enable Bootstrap Tooltips
+        document.addEventListener("DOMContentLoaded", function() {
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        });
+
         // Account State
         let loggedInUser = localStorage.getItem("SCRIPTFORGE_USER") || null;
 
@@ -1336,6 +1469,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         let aiMode = localStorage.getItem("SCRIPTFORGE_AI_MODE") || "coding";
         let autoExecute = localStorage.getItem("ANTIGRAVITY_AUTO_EXECUTE") === "true";
         let autoFix = localStorage.getItem("ANTIGRAVITY_AUTO_FIX") !== "false";
+        let useContext = localStorage.getItem("SCRIPTFORGE_USE_CONTEXT") !== "false";
         let currentTheme = localStorage.getItem("ANTIGRAVITY_THEME") || "dark";
         let wasConnected = false;
         let currentGameName = "General Roblox";
@@ -1494,10 +1628,18 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
         function updateAuthHeaderBtn() {
             const btn = document.getElementById("authHeaderBtn");
+            const weenBtn = document.getElementById("weenContextBtn");
+
             if (loggedInUser) {
                 btn.innerHTML = `<i class="fa-solid fa-user-check me-1"></i> ${escapeHtml(loggedInUser)}`;
+                if (loggedInUser.toLowerCase() === "ween") {
+                    if (weenBtn) weenBtn.style.display = "inline-flex";
+                } else {
+                    if (weenBtn) weenBtn.style.display = "none";
+                }
             } else {
                 btn.innerHTML = `<i class="fa-solid fa-user me-1"></i> Login / Sign Up`;
+                if (weenBtn) weenBtn.style.display = "none";
             }
         }
 
@@ -1633,8 +1775,11 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         function updateTogglePillsUI() {
             const execPill = document.getElementById("autoExecPill");
             const fixPill = document.getElementById("autoFixPill");
+            const ctxPill = document.getElementById("useContextPill");
+
             if (autoExecute) execPill.classList.add("active"); else execPill.classList.remove("active");
             if (autoFix) fixPill.classList.add("active"); else fixPill.classList.remove("active");
+            if (useContext) ctxPill.classList.add("active"); else ctxPill.classList.remove("active");
         }
 
         function toggleTheme() {
@@ -1673,13 +1818,180 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             showToast(autoFix ? "Auto-Fix Errors Active" : "Auto-Fix Disabled", autoFix ? "fa-solid fa-wrench" : "fa-solid fa-circle-info");
         }
 
+        function toggleUseContext() {
+            useContext = !useContext;
+            localStorage.setItem("SCRIPTFORGE_USE_CONTEXT", useContext);
+            updateTogglePillsUI();
+            showToast(useContext ? "Context Reference Active" : "Context Reference Disabled", useContext ? "fa-solid fa-book-open" : "fa-solid fa-circle-info");
+        }
+
+        // Functions for User 'Ween' Context Window Management
+        async function openWeenContextModal() {
+            if (!loggedInUser || loggedInUser.toLowerCase() !== "ween") return;
+            resetWeenForm();
+            await renderWeenContextScriptsList();
+            const modal = new bootstrap.Modal(document.getElementById("weenContextModal"));
+            modal.show();
+        }
+
+        function resetWeenForm() {
+            document.getElementById("weenScriptId").value = "";
+            document.getElementById("weenPlaceIdInput").value = currentPlaceId && currentPlaceId !== 0 ? currentPlaceId : "";
+            document.getElementById("weenTitleInput").value = "";
+            document.getElementById("weenCodeInput").value = "";
+            document.getElementById("weenFormTitle").innerHTML = '<i class="fa-solid fa-plus me-1"></i> Add New Script Context';
+        }
+
+        async function renderWeenContextScriptsList() {
+            const container = document.getElementById("weenScriptContextsList");
+            container.innerHTML = `<div class="text-center py-3 text-secondary"><i class="fa-solid fa-spinner fa-spin me-2"></i> Loading context scripts...</div>`;
+
+            try {
+                const res = await fetch("/api/context_scripts");
+                const data = await res.json();
+                
+                container.innerHTML = "";
+                const placeIds = Object.keys(data);
+
+                if (placeIds.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-4 theme-card rounded border border-secondary text-secondary" style="font-size: 0.85rem;">
+                            <i class="fa-solid fa-folder-open mb-2" style="font-size: 1.5rem;"></i><br>
+                            No place executor scripts saved yet. Fill out the form above to add your first reference script!
+                        </div>
+                    `;
+                    return;
+                }
+
+                placeIds.forEach(pId => {
+                    const scriptsList = data[pId];
+                    const card = document.createElement("div");
+                    card.className = "p-3 theme-card rounded border border-secondary mb-3";
+
+                    let scriptsHtml = "";
+                    scriptsList.forEach(s => {
+                        scriptsHtml += `
+                            <div class="p-2 rounded mb-2 border border-secondary" style="background-color: var(--bg-card); font-size: 0.82rem;">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <span class="fw-bold theme-text-main"><i class="fa-solid fa-file-code me-1"></i> ${escapeHtml(s.title || "Untitled")}</span>
+                                    <div>
+                                        <button class="btn btn-sm btn-theme-outline py-0 px-2 me-1" style="font-size:0.75rem;" onclick="editWeenScript('${pId}', '${s.id}')"><i class="fa-solid fa-pencil"></i> Edit</button>
+                                        <button class="btn btn-sm btn-theme-outline py-0 px-2" style="font-size:0.75rem;" onclick="deleteWeenScript('${pId}', '${s.id}')"><i class="fa-solid fa-trash-can"></i> Delete</button>
+                                    </div>
+                                </div>
+                                <pre class="m-0 p-2 rounded text-light" style="font-size:0.78rem; max-height:140px; overflow-y:auto; background:var(--code-bg);"><code class="language-lua">${escapeHtml(s.code)}</code></pre>
+                            </div>
+                        `;
+                    });
+
+                    card.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom border-secondary">
+                            <span class="fw-bold theme-text-main" style="font-size: 0.9rem;">
+                                <i class="fa-solid fa-gamepad me-1"></i> Place ID: <span class="font-monospace">${pId}</span>
+                            </span>
+                            <span class="badge theme-input text-secondary border border-secondary">${scriptsList.length} script(s)</span>
+                        </div>
+                        ${scriptsHtml}
+                    `;
+                    container.appendChild(card);
+                });
+
+            } catch(e) {
+                container.innerHTML = `<div class="alert alert-danger p-2" style="font-size:0.82rem;">Error loading scripts: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        async function saveWeenContextScript() {
+            const id = document.getElementById("weenScriptId").value;
+            const placeId = document.getElementById("weenPlaceIdInput").value.trim();
+            const title = document.getElementById("weenTitleInput").value.trim();
+            const code = document.getElementById("weenCodeInput").value.trim();
+
+            if (!placeId || placeId === "0") {
+                showToast("Please enter a valid Place ID", "fa-solid fa-circle-exclamation");
+                return;
+            }
+            if (!code) {
+                showToast("Please enter Luau script code", "fa-solid fa-circle-exclamation");
+                return;
+            }
+
+            try {
+                const res = await fetch("/api/context_scripts/save", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        username: loggedInUser,
+                        id: id,
+                        place_id: placeId,
+                        title: title || "Executor Reference Script",
+                        code: code
+                    })
+                });
+
+                const data = await res.json();
+                if (data.error) {
+                    showToast(data.error, "fa-solid fa-circle-exclamation");
+                } else {
+                    showToast("Script Context Saved!", "fa-solid fa-floppy-disk");
+                    resetWeenForm();
+                    await renderWeenContextScriptsList();
+                }
+            } catch(e) {
+                showToast("Error saving script: " + e.message, "fa-solid fa-circle-exclamation");
+            }
+        }
+
+        async function editWeenScript(placeId, scriptId) {
+            try {
+                const res = await fetch("/api/context_scripts");
+                const data = await res.json();
+                const script = (data[placeId] || []).find(s => s.id === scriptId);
+                if (script) {
+                    document.getElementById("weenScriptId").value = script.id;
+                    document.getElementById("weenPlaceIdInput").value = placeId;
+                    document.getElementById("weenTitleInput").value = script.title || "";
+                    document.getElementById("weenCodeInput").value = script.code || "";
+                    document.getElementById("weenFormTitle").innerHTML = '<i class="fa-solid fa-pencil me-1"></i> Edit Script Context';
+                    document.getElementById("weenContextModal").querySelector(".modal-body").scrollTop = 0;
+                }
+            } catch(e) {
+                showToast("Error loading script details", "fa-solid fa-circle-exclamation");
+            }
+        }
+
+        async function deleteWeenScript(placeId, scriptId) {
+            if (!confirm("Are you sure you want to delete this script context?")) return;
+            try {
+                const res = await fetch("/api/context_scripts/delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        username: loggedInUser,
+                        place_id: placeId,
+                        id: scriptId
+                    })
+                });
+
+                const data = await res.json();
+                if (data.error) {
+                    showToast(data.error, "fa-solid fa-circle-exclamation");
+                } else {
+                    showToast("Script Context Deleted", "fa-solid fa-trash-can");
+                    await renderWeenContextScriptsList();
+                }
+            } catch(e) {
+                showToast("Error deleting script: " + e.message, "fa-solid fa-circle-exclamation");
+            }
+        }
+
         function autoGrow(element) {
             element.style.height = "24px";
             element.style.height = Math.min(element.scrollHeight, 120) + "px";
         }
 
         function getFormattedExecutorScript() {
-            const origin = window.location.origin;
+            const origin = window.location.origin.replace(/\/+$/, "");
             const key = getSessionKey();
             return `-- ScriptForge Unique Session Loader\ngetgenv().SCRIPTFORGE_URL = "${origin}"\ngetgenv().SESSION_KEY = "${key}"\n\nloadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/main/roblox_client.lua"))()`;
         }
@@ -2123,6 +2435,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                         ai_mode: aiMode,
                         auto_execute: autoExecute,
                         auto_fix: autoFix,
+                        use_context: useContext,
                         history: historyForApi
                     })
                 });
@@ -2359,6 +2672,70 @@ def sync_chats_cloud():
 
     return jsonify({"error": "User not found"}), 404
 
+# Script Context Reference Endpoints for User 'Ween'
+@app.route("/api/context_scripts", methods=["GET"])
+def get_context_scripts_route():
+    scripts = load_context_scripts()
+    return jsonify(scripts)
+
+@app.route("/api/context_scripts/save", methods=["POST"])
+def save_context_script_route():
+    data = request.json or {}
+    username = (data.get("username") or "").strip()
+
+    if username.lower() != "ween":
+        return jsonify({"error": "Unauthorized. Only user 'Ween' can add or edit script contexts."}), 403
+
+    place_id = str(data.get("place_id", "0")).strip()
+    title = (data.get("title") or "Executor Script").strip()
+    code = (data.get("code") or "").strip()
+    script_id = data.get("id") or f"ctx_{int(time.time()*1000)}"
+
+    if not place_id or place_id == "0":
+        return jsonify({"error": "Valid Place ID required"}), 400
+    if not code:
+        return jsonify({"error": "Script code required"}), 400
+
+    all_scripts = load_context_scripts()
+    if place_id not in all_scripts:
+        all_scripts[place_id] = []
+
+    existing_idx = next((i for i, item in enumerate(all_scripts[place_id]) if item.get("id") == script_id), -1)
+    new_item = {
+        "id": script_id,
+        "title": title,
+        "code": code,
+        "updated_at": time.time()
+    }
+
+    if existing_idx >= 0:
+        all_scripts[place_id][existing_idx] = new_item
+    else:
+        all_scripts[place_id].append(new_item)
+
+    save_context_scripts(all_scripts)
+    return jsonify({"status": "ok", "script": new_item})
+
+@app.route("/api/context_scripts/delete", methods=["POST"])
+def delete_context_script_route():
+    data = request.json or {}
+    username = (data.get("username") or "").strip()
+
+    if username.lower() != "ween":
+        return jsonify({"error": "Unauthorized"}), 403
+
+    place_id = str(data.get("place_id", "")).strip()
+    script_id = data.get("id")
+
+    all_scripts = load_context_scripts()
+    if place_id in all_scripts:
+        all_scripts[place_id] = [s for s in all_scripts[place_id] if s.get("id") != script_id]
+        if not all_scripts[place_id]:
+            del all_scripts[place_id]
+        save_context_scripts(all_scripts)
+
+    return jsonify({"status": "deleted"})
+
 @app.route("/api/set_key", methods=["POST"])
 def set_key():
     global openrouter_api_key
@@ -2390,7 +2767,7 @@ def generate_title_route():
     
     title_prompt = f"Summarize this user request into a short 2 to 4 word chat title. Return ONLY the title text without quotes, punctuation, or extra markdown:\n'{prompt}'"
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
-    reply, err = generate_ai_response(title_prompt, "openrouter/anthropic/claude-3.5-sonnet", [], game_ctx={}, openrouter_key=openrouter_key, ai_mode="chat")
+    reply, err = generate_ai_response(title_prompt, "openrouter/anthropic/claude-3.5-sonnet", [], game_ctx={}, openrouter_key=openrouter_key, ai_mode="chat", use_context=False)
     
     if reply:
         clean_title = reply.strip().strip('"').strip("'").split("\n")[0]
@@ -2437,9 +2814,10 @@ def chat():
     
     auto_execute = data.get("auto_execute", False)
     auto_fix = data.get("auto_fix", True)
+    use_context = data.get("use_context", True)
     history = data.get("history", [])
 
-    reply, err = generate_ai_response(prompt, selected_model, history, store["game_context"], openrouter_key=openrouter_key, ai_mode=ai_mode)
+    reply, err = generate_ai_response(prompt, selected_model, history, store["game_context"], openrouter_key=openrouter_key, ai_mode=ai_mode, use_context=use_context)
     
     if err:
         return jsonify({"error": f"AI Generation Error: {err}"}), 500
@@ -2472,6 +2850,7 @@ def chat():
             "status": "verifying",
             "attempts": 0,
             "auto_fix": auto_fix,
+            "use_context": use_context,
             "logs": trajectory,
             "original_reply": reply,
             "final_code": extracted_code,
@@ -2549,6 +2928,7 @@ def report_error():
             "status": "verifying",
             "attempts": 0,
             "auto_fix": True,
+            "use_context": True,
             "logs": [],
             "reply": "",
             "history": [],
@@ -2588,8 +2968,9 @@ def report_error():
     openrouter_key = sess.get("openrouter_key") or os.getenv("OPENROUTER_API_KEY", "") or openrouter_api_key
     selected_model = sess.get("model") or "openrouter/anthropic/claude-3.5-sonnet"
     ai_mode = sess.get("ai_mode") or "coding"
+    use_context = sess.get("use_context", True)
 
-    reply, err = generate_ai_response(debug_prompt, selected_model, sess.get("history", []), store["game_context"], openrouter_key=openrouter_key, ai_mode=ai_mode)
+    reply, err = generate_ai_response(debug_prompt, selected_model, sess.get("history", []), store["game_context"], openrouter_key=openrouter_key, ai_mode=ai_mode, use_context=use_context)
 
     if reply:
         fixed_code = extract_luau_code(reply)
@@ -2627,6 +3008,7 @@ def queue_script():
             "status": "verifying",
             "attempts": 0,
             "auto_fix": True,
+            "use_context": True,
             "logs": ["Queued manually for execution..."],
             "original_reply": f"Manual Script Execution:\n```luau\n{code}\n```",
             "final_code": code,
