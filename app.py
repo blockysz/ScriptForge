@@ -416,14 +416,16 @@ def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, o
                 seen_ids.add(s_id)
 
             c_code = clean_context_script(item.get("code", ""))
+            c_type = item.get("type") or item.get("context_type") or "script"
             if c_code:
                 cleaned_refs.append({
-                    "title": item.get("title", "Reference Script"),
-                    "essential_code": c_code
+                    "title": item.get("title", "Reference Context"),
+                    "format_type": c_type,
+                    "content": c_code
                 })
         if cleaned_refs:
             game_ctx = dict(game_ctx or {})
-            game_ctx["place_reference_executor_scripts"] = cleaned_refs
+            game_ctx["place_reference_context"] = cleaned_refs
 
     if ai_mode == "thinking":
         system_instruction = """
@@ -444,7 +446,7 @@ def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, o
         You are ScriptForge's expert Luau Scripting Assistant connected directly to a live Roblox game player session.
         Your primary goal is writing, testing, auto-fixing, and optimizing valid Luau code inside ```luau ... ``` blocks suitable for execution.
         Use exact Remote names, leaderstats, and workspace paths from live context.
-        If reference executor scripts are provided in `place_reference_executor_scripts`, focus strictly on essential game remote calls, argument structures, and internal game functions. Ignore any external logic, webhooks, or third-party requests.
+        If reference context entries (scripts or text notes) are provided in `place_reference_context`, use them to learn exact game remote calls, argument structures, mechanics, and game specifications. Ignore any external logic, webhooks, or third-party requests.
         """
 
     m_name = selected_model.replace("openrouter/", "")
@@ -1282,35 +1284,42 @@ HTML_TEMPLATE = r"""
         <div class="modal-dialog modal-lg">
             <div class="modal-content border-secondary">
                 <div class="modal-header border-secondary">
-                    <h5 class="modal-title theme-text-main"><i class="fa-solid fa-book-bookmark me-2"></i> Manage Game Executor Script Contexts (Ween Only)</h5>
+                    <h5 class="modal-title theme-text-main"><i class="fa-solid fa-book-bookmark me-2"></i> Manage Game Script & Text Contexts (Ween Only)</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body p-4" style="max-height: 75vh; overflow-y: auto;">
                     <p class="text-secondary" style="font-size: 0.85rem;">
-                        Add existing reference scripts for specific Roblox Place IDs. When enabled via <strong>Use Context</strong>, the AI uses these script examples to learn exact remote calls and functions for that game.
+                        Add reference scripts or general text notes for specific Roblox Place IDs (or <strong>Universal</strong>). When <strong>Use Context</strong> is active, the AI analyzes these entries to learn exact game mechanics, remote calls, and custom logic.
                     </p>
                     
-                    <!-- Form to Add/Edit Reference Script -->
+                    <!-- Form to Add/Edit Reference Script or Text Context -->
                     <div class="p-3 theme-card rounded border border-secondary mb-4">
-                        <h6 class="theme-text-main fw-bold mb-3" id="weenFormTitle"><i class="fa-solid fa-plus me-1"></i> Add New Script Context</h6>
+                        <h6 class="theme-text-main fw-bold mb-3" id="weenFormTitle"><i class="fa-solid fa-plus me-1"></i> Add New Context (Script or Text)</h6>
                         <input type="hidden" id="weenScriptId">
                         <div class="row g-2 mb-3">
-                            <div class="col-md-4">
-                                <label class="form-label text-secondary" style="font-size: 0.8rem;">Place ID (or Universal)</label>
+                            <div class="col-md-3">
+                                <label class="form-label text-secondary" style="font-size: 0.8rem;">Place ID / Scope</label>
                                 <input type="text" id="weenPlaceIdInput" class="form-control theme-input border-secondary" placeholder="e.g. 185655149 or Universal">
                             </div>
-                            <div class="col-md-8">
-                                <label class="form-label text-secondary" style="font-size: 0.8rem;">Script Title / Description</label>
-                                <input type="text" id="weenTitleInput" class="form-control theme-input border-secondary" placeholder="e.g. Auto-Farm Remote Call Example">
+                            <div class="col-md-3">
+                                <label class="form-label text-secondary" style="font-size: 0.8rem;">Format Type</label>
+                                <select id="weenTypeInput" class="form-select theme-input border-secondary" style="font-size: 0.8rem;">
+                                    <option value="script">Luau Script / Code</option>
+                                    <option value="text">General Text / Notes</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label text-secondary" style="font-size: 0.8rem;">Context Title</label>
+                                <input type="text" id="weenTitleInput" class="form-control theme-input border-secondary" placeholder="e.g. Auto-Farm Mechanics or Remote Event Specs">
                             </div>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label text-secondary" style="font-size: 0.8rem;">Luau Script Example</label>
-                            <textarea id="weenCodeInput" class="form-control theme-input font-monospace border-secondary" rows="5" placeholder="-- Paste example executor script or remote calls here"></textarea>
+                            <label class="form-label text-secondary" style="font-size: 0.8rem;">Context Content (Script Code or Text Notes)</label>
+                            <textarea id="weenCodeInput" class="form-control theme-input font-monospace border-secondary" rows="5" placeholder="-- Paste Luau script, or type text notes, remote specifications, game mechanics..."></textarea>
                         </div>
                         <div class="d-flex justify-content-end gap-2">
                             <button class="btn btn-sm btn-theme-outline" onclick="resetWeenForm()">Cancel</button>
-                            <button class="btn btn-sm btn-theme-primary px-3" onclick="saveWeenContextScript()"><i class="fa-solid fa-floppy-disk me-1"></i> Save Context Script</button>
+                            <button class="btn btn-sm btn-theme-primary px-3" onclick="saveWeenContextScript()"><i class="fa-solid fa-floppy-disk me-1"></i> Save Context Entry</button>
                         </div>
                     </div>
 
@@ -2083,9 +2092,10 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         function resetWeenForm() {
             document.getElementById("weenScriptId").value = "";
             document.getElementById("weenPlaceIdInput").value = currentPlaceId && currentPlaceId !== 0 ? currentPlaceId : "";
+            document.getElementById("weenTypeInput").value = "script";
             document.getElementById("weenTitleInput").value = "";
             document.getElementById("weenCodeInput").value = "";
-            document.getElementById("weenFormTitle").innerHTML = '<i class="fa-solid fa-plus me-1"></i> Add New Script Context';
+            document.getElementById("weenFormTitle").innerHTML = '<i class="fa-solid fa-plus me-1"></i> Add New Context (Script or Text)';
         }
 
         async function renderWeenContextScriptsList() {
@@ -2113,7 +2123,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     container.innerHTML = `
                         <div class="text-center py-4 theme-card rounded border border-secondary text-secondary" style="font-size: 0.85rem;">
                             <i class="fa-solid fa-folder-open mb-2" style="font-size: 1.5rem;"></i><br>
-                            No place executor scripts saved yet. Fill out the form above to add your first reference script!
+                            No context entries saved yet. Fill out the form above to add your first reference script or text note!
                         </div>
                     `;
                     return;
@@ -2131,16 +2141,25 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
                     let scriptsHtml = "";
                     scriptsList.forEach(s => {
+                        const sType = (s.type || s.context_type || "script").toLowerCase();
+                        const typeBadge = sType === "text"
+                            ? `<span class="badge bg-info text-dark me-1" style="font-size:0.7rem;"><i class="fa-solid fa-file-lines me-1"></i> Text Note</span>`
+                            : `<span class="badge bg-primary me-1" style="font-size:0.7rem;"><i class="fa-solid fa-code me-1"></i> Luau Script</span>`;
+
+                        const contentBox = sType === "text"
+                            ? `<div class="m-0 p-2 rounded text-light" style="font-size:0.82rem; max-height:160px; overflow-y:auto; background:var(--code-bg); white-space:pre-wrap;">${escapeHtml(s.code || "")}</div>`
+                            : `<pre class="m-0 p-2 rounded text-light" style="font-size:0.78rem; max-height:160px; overflow-y:auto; background:var(--code-bg);"><code class="language-lua">${escapeHtml(s.code || "")}</code></pre>`;
+
                         scriptsHtml += `
                             <div class="p-2 rounded mb-2 border border-secondary" style="background-color: var(--bg-card); font-size: 0.82rem;">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <span class="fw-bold theme-text-main"><i class="fa-solid fa-file-code me-1"></i> ${escapeHtml(s.title || "Untitled")}</span>
+                                    <span class="fw-bold theme-text-main">${typeBadge} ${escapeHtml(s.title || "Untitled Context")}</span>
                                     <div>
                                         <button class="btn btn-sm btn-theme-outline py-0 px-2 me-1" style="font-size:0.75rem;" onclick="editWeenScript('${pId}', '${s.id}')"><i class="fa-solid fa-pencil"></i> Edit</button>
                                         <button class="btn btn-sm btn-theme-outline py-0 px-2" style="font-size:0.75rem;" onclick="deleteWeenScript('${pId}', '${s.id}')"><i class="fa-solid fa-trash-can"></i> Delete</button>
                                     </div>
                                 </div>
-                                <pre class="m-0 p-2 rounded text-light" style="font-size:0.78rem; max-height:140px; overflow-y:auto; background:var(--code-bg);"><code class="language-lua">${escapeHtml(s.code)}</code></pre>
+                                ${contentBox}
                             </div>
                         `;
                     });
@@ -2150,7 +2169,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                             <span class="fw-bold theme-text-main" style="font-size: 0.9rem;">
                                 ${headerTitle}
                             </span>
-                            <span class="badge theme-input text-secondary border border-secondary">${scriptsList.length} script(s)</span>
+                            <span class="badge theme-input text-secondary border border-secondary">${scriptsList.length} entry(s)</span>
                         </div>
                         ${scriptsHtml}
                     `;
@@ -2158,13 +2177,14 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 });
 
             } catch(e) {
-                container.innerHTML = `<div class="alert alert-danger p-2" style="font-size:0.82rem;">Error loading scripts: ${escapeHtml(e.message)}</div>`;
+                container.innerHTML = `<div class="alert alert-danger p-2" style="font-size:0.82rem;">Error loading context: ${escapeHtml(e.message)}</div>`;
             }
         }
 
         async function saveWeenContextScript() {
             const id = document.getElementById("weenScriptId").value;
             let placeId = document.getElementById("weenPlaceIdInput").value.trim();
+            const type = document.getElementById("weenTypeInput").value;
             const title = document.getElementById("weenTitleInput").value.trim();
             const code = document.getElementById("weenCodeInput").value.trim();
 
@@ -2173,7 +2193,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 return;
             }
             if (!code) {
-                showToast("Please enter Luau script code", "fa-solid fa-circle-exclamation");
+                showToast("Please enter script code or text notes", "fa-solid fa-circle-exclamation");
                 return;
             }
 
@@ -2185,7 +2205,8 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                         username: loggedInUser,
                         id: id,
                         place_id: placeId,
-                        title: title || "Executor Reference Script",
+                        type: type,
+                        title: title || (type === "text" ? "Context Text Note" : "Executor Reference Script"),
                         code: code
                     })
                 });
@@ -2194,12 +2215,12 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 if (data.error) {
                     showToast(data.error, "fa-solid fa-circle-exclamation");
                 } else {
-                    showToast("Script Context Saved!", "fa-solid fa-floppy-disk");
+                    showToast("Context Entry Saved!", "fa-solid fa-floppy-disk");
                     resetWeenForm();
                     await renderWeenContextScriptsList();
                 }
             } catch(e) {
-                showToast("Error saving script: " + e.message, "fa-solid fa-circle-exclamation");
+                showToast("Error saving context: " + e.message, "fa-solid fa-circle-exclamation");
             }
         }
 
@@ -2211,13 +2232,14 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 if (script) {
                     document.getElementById("weenScriptId").value = script.id;
                     document.getElementById("weenPlaceIdInput").value = placeId;
+                    document.getElementById("weenTypeInput").value = script.type || script.context_type || "script";
                     document.getElementById("weenTitleInput").value = script.title || "";
                     document.getElementById("weenCodeInput").value = script.code || "";
-                    document.getElementById("weenFormTitle").innerHTML = '<i class="fa-solid fa-pencil me-1"></i> Edit Script Context';
+                    document.getElementById("weenFormTitle").innerHTML = '<i class="fa-solid fa-pencil me-1"></i> Edit Context Entry';
                     document.getElementById("weenContextModal").querySelector(".modal-body").scrollTop = 0;
                 }
             } catch(e) {
-                showToast("Error loading script details", "fa-solid fa-circle-exclamation");
+                showToast("Error loading context details", "fa-solid fa-circle-exclamation");
             }
         }
 
@@ -3038,14 +3060,19 @@ def save_context_script_route():
     else:
         place_id = raw_pid
 
-    title = (data.get("title") or "Executor Script").strip()
+    context_type = (data.get("type") or data.get("context_type") or "script").strip().lower()
+    if context_type not in ["script", "text"]:
+        context_type = "script"
+
+    default_title = "Context Text Note" if context_type == "text" else "Executor Reference Script"
+    title = (data.get("title") or default_title).strip()
     code = (data.get("code") or "").strip()
     script_id = data.get("id") or f"ctx_{int(time.time()*1000)}"
 
     if not place_id:
         return jsonify({"error": "Valid Place ID or 'Universal' required"}), 400
     if not code:
-        return jsonify({"error": "Script code required"}), 400
+        return jsonify({"error": "Context content or script code required"}), 400
 
     all_scripts = load_context_scripts()
     if place_id not in all_scripts:
@@ -3054,6 +3081,7 @@ def save_context_script_route():
     existing_idx = next((i for i, item in enumerate(all_scripts[place_id]) if item.get("id") == script_id), -1)
     new_item = {
         "id": script_id,
+        "type": context_type,
         "title": title,
         "code": code,
         "updated_at": time.time()
