@@ -40,6 +40,7 @@ def kv_set(key, value_obj):
     global KV_URL, KV_TOKEN
     if not (KV_URL and KV_TOKEN):
         return False
+    # Method 1: Root POST command ["SET", key, val]
     try:
         url = KV_URL.rstrip('/')
         payload = json.dumps(["SET", key, json.dumps(value_obj)])
@@ -53,9 +54,28 @@ def kv_set(key, value_obj):
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             res = json.loads(resp.read().decode("utf-8"))
-            return res.get("result") == "OK"
+            if res.get("result") in ("OK", "ok", True):
+                return True
     except Exception as e:
-        print(f"[KV_SET ERROR] Key '{key}': {e}")
+        print(f"[KV_SET Method 1 ERROR] Key '{key}': {e}")
+
+    # Method 2: REST URL endpoint format /set/{key}
+    try:
+        url = f"{KV_URL.rstrip('/')}/set/{urllib.parse.quote(key)}"
+        payload = json.dumps(json.dumps(value_obj))
+        req = urllib.request.Request(
+            url,
+            data=payload.encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {KV_TOKEN}",
+                "Content-Type": "application/json"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            res = json.loads(resp.read().decode("utf-8"))
+            return res.get("result") in ("OK", "ok", True)
+    except Exception as e:
+        print(f"[KV_SET Method 2 ERROR] Key '{key}': {e}")
         return False
 
 def kv_get(key):
@@ -63,18 +83,47 @@ def kv_get(key):
     global KV_URL, KV_TOKEN
     if not (KV_URL and KV_TOKEN):
         return None
+    # Method 1: GET /get/{key}
     try:
-        url = f"{KV_URL.rstrip('/')}/get/{key}"
+        url = f"{KV_URL.rstrip('/')}/get/{urllib.parse.quote(key)}"
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {KV_TOKEN}"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             res = json.loads(resp.read().decode("utf-8"))
             val = res.get("result")
             if val is not None:
                 if isinstance(val, str):
-                    return json.loads(val)
+                    try:
+                        return json.loads(val)
+                    except Exception:
+                        return val
                 return val
     except Exception as e:
-        print(f"[KV_GET ERROR] Key '{key}': {e}")
+        print(f"[KV_GET Method 1 ERROR] Key '{key}': {e}")
+
+    # Method 2: POST command ["GET", key]
+    try:
+        url = KV_URL.rstrip('/')
+        payload = json.dumps(["GET", key])
+        req = urllib.request.Request(
+            url,
+            data=payload.encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {KV_TOKEN}",
+                "Content-Type": "application/json"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            res = json.loads(resp.read().decode("utf-8"))
+            val = res.get("result")
+            if val is not None:
+                if isinstance(val, str):
+                    try:
+                        return json.loads(val)
+                    except Exception:
+                        return val
+                return val
+    except Exception as e:
+        print(f"[KV_GET Method 2 ERROR] Key '{key}': {e}")
     return None
 
 def load_accounts():
@@ -1737,6 +1786,74 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             }
         }
 
+        function saveAccountToLocalBackup(accountObj) {
+            if (!accountObj || !accountObj.username) return;
+            const uKey = accountObj.username.toLowerCase();
+            localStorage.setItem("SCRIPTFORGE_ACCOUNT_BACKUP_" + uKey, JSON.stringify(accountObj));
+
+            let db = {};
+            const rawDb = localStorage.getItem("SCRIPTFORGE_ACCOUNTS_DB");
+            if (rawDb) {
+                try { db = JSON.parse(rawDb); } catch(e){}
+            }
+            db[uKey] = accountObj;
+            localStorage.setItem("SCRIPTFORGE_ACCOUNTS_DB", JSON.stringify(db));
+        }
+
+        async function autoRestoreAccountsAndContext() {
+            try {
+                let accountsObj = {};
+                const accountsDbRaw = localStorage.getItem("SCRIPTFORGE_ACCOUNTS_DB");
+                if (accountsDbRaw) {
+                    try { accountsObj = JSON.parse(accountsDbRaw); } catch(e){}
+                }
+
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith("SCRIPTFORGE_ACCOUNT_BACKUP_")) {
+                        try {
+                            const acc = JSON.parse(localStorage.getItem(key));
+                            if (acc && acc.username) {
+                                accountsObj[acc.username.toLowerCase()] = acc;
+                            }
+                        } catch(e){}
+                    }
+                }
+
+                if (Object.keys(accountsObj).length > 0) {
+                    await fetch('/api/auth/client_restore', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ accounts: accountsObj })
+                    });
+                }
+
+                const ctxRaw = localStorage.getItem("SCRIPTFORGE_CONTEXT_BACKUP");
+                if (ctxRaw) {
+                    try {
+                        const ctxObj = JSON.parse(ctxRaw);
+                        if (Object.keys(ctxObj).length > 0) {
+                            await fetch('/api/context_scripts/restore', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ scripts: ctxObj })
+                            });
+                        }
+                    } catch(e){}
+                }
+
+                const ctxRes = await fetch('/api/context_scripts');
+                if (ctxRes.ok) {
+                    const serverCtx = await ctxRes.json();
+                    if (serverCtx && typeof serverCtx === 'object') {
+                        localStorage.setItem("SCRIPTFORGE_CONTEXT_BACKUP", JSON.stringify(serverCtx));
+                    }
+                }
+            } catch(err) {
+                console.error("Auto restore error:", err);
+            }
+        }
+
         async function submitLogin() {
             const user = document.getElementById("loginUsername").value.trim();
             const pass = document.getElementById("loginPassword").value;
@@ -1757,7 +1874,20 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 // Client auto-restore if serverless container memory reset
                 if (data.error && data.error.includes("does not exist")) {
                     const localBackupKey = "SCRIPTFORGE_ACCOUNT_BACKUP_" + user.toLowerCase();
-                    const rawBackup = localStorage.getItem(localBackupKey);
+                    let rawBackup = localStorage.getItem(localBackupKey);
+
+                    if (!rawBackup) {
+                        const accountsDbRaw = localStorage.getItem("SCRIPTFORGE_ACCOUNTS_DB");
+                        if (accountsDbRaw) {
+                            try {
+                                const db = JSON.parse(accountsDbRaw);
+                                if (db[user.toLowerCase()]) {
+                                    rawBackup = JSON.stringify(db[user.toLowerCase()]);
+                                }
+                            } catch(e){}
+                        }
+                    }
+
                     if (rawBackup) {
                         try {
                             const accountObj = JSON.parse(rawBackup);
@@ -1787,6 +1917,9 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     if (data.user.session_key) {
                         localStorage.setItem("SCRIPTFORGE_SESSION_KEY", data.user.session_key);
                     }
+                    if (data.account_raw) {
+                        saveAccountToLocalBackup(data.account_raw);
+                    }
                     if (data.user.chats && data.user.chats.length > 0) {
                         chats = data.user.chats;
                         activeChatId = chats[0].id;
@@ -1800,7 +1933,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     updateAuthHeaderBtn();
                     bootstrap.Modal.getInstance(document.getElementById("authModal")).hide();
                     showToast(`Welcome back, ${loggedInUser}!`, "fa-solid fa-circle-check");
-                    ensureContextBackupSynced();
+                    autoRestoreAccountsAndContext();
                 }
             } catch(e) {
                 showToast("Connection error: " + e.message, "fa-solid fa-circle-exclamation");
@@ -1830,14 +1963,14 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     localStorage.setItem("SCRIPTFORGE_USER", loggedInUser);
                     
                     if (data.account_raw) {
-                        localStorage.setItem("SCRIPTFORGE_ACCOUNT_BACKUP_" + loggedInUser.toLowerCase(), JSON.stringify(data.account_raw));
+                        saveAccountToLocalBackup(data.account_raw);
                     }
                     
                     updateAuthHeaderBtn();
                     bootstrap.Modal.getInstance(document.getElementById("authModal")).hide();
                     showToast(`Account created! Welcome ${loggedInUser}`, "fa-solid fa-circle-check");
                     syncChatsToCloud();
-                    ensureContextBackupSynced();
+                    autoRestoreAccountsAndContext();
                 }
             } catch(e) {
                 showToast("Connection error: " + e.message, "fa-solid fa-circle-exclamation");
@@ -2705,7 +2838,10 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         updateGameFilterDropdown();
         renderChatList();
         renderActiveChat();
-        ensureContextBackupSynced();
+        autoRestoreAccountsAndContext();
+        window.addEventListener("DOMContentLoaded", () => {
+            autoRestoreAccountsAndContext();
+        });
     </script>
 </body>
 </html>
@@ -2732,20 +2868,33 @@ def storage_status_route():
 def auth_client_restore():
     data = request.json or {}
     account = data.get("account") or {}
-    username = (account.get("username") or "").strip()
-    
-    if not username:
-        return jsonify({"error": "Invalid account data"}), 400
+    accounts_dict = data.get("accounts") or {}
 
-    user_key = username.lower()
     accounts = load_accounts()
+    updated = False
 
-    if user_key not in accounts and account.get("password_hash") and account.get("salt"):
-        accounts[user_key] = account
+    # 1. Single account restoration
+    username = (account.get("username") or "").strip()
+    if username and account.get("password_hash") and account.get("salt"):
+        user_key = username.lower()
+        if user_key not in accounts:
+            accounts[user_key] = account
+            updated = True
+
+    # 2. Bulk accounts database restoration
+    if isinstance(accounts_dict, dict):
+        for u_key, acc_data in accounts_dict.items():
+            if isinstance(acc_data, dict) and acc_data.get("username") and acc_data.get("password_hash") and acc_data.get("salt"):
+                k = u_key.lower()
+                if k not in accounts:
+                    accounts[k] = acc_data
+                    updated = True
+
+    if updated:
         save_accounts(accounts)
-        print(f"[CLIENT RESTORE] Restored account '{username}' from client backup!")
+        print(f"[CLIENT RESTORE] Restored {len(accounts)} total account(s) into serverless memory & KV!")
 
-    return jsonify({"status": "restored", "user": accounts.get(user_key)})
+    return jsonify({"status": "restored", "accounts": list(accounts.keys())})
 
 # Client Auto-Restore Protocol for Context Scripts
 @app.route("/api/context_scripts/restore", methods=["POST"])
