@@ -137,61 +137,69 @@ local function checkPendingScripts()
         if decodeOk and data and data.has_script and data.code and data.code ~= "" then
             print("[ScriptForge] 🚀 Executing script [" .. tostring(data.script_id) .. "]...")
             
-            local func, compileErr = loadstring(data.code)
-            if not func then
-                print("[ScriptForge Compile Error]: " .. tostring(compileErr))
-                requestFunc({
-                    Url = SERVER_URL .. "/api/report_error",
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json",
-                        ["X-Session-Key"] = SESSION_KEY
-                    },
-                    Body = HttpService:JSONEncode({
-                        session_key = SESSION_KEY,
-                        script_id = data.script_id,
-                        failed_code = data.code,
-                        error_message = "Syntax/Compile Error: " .. tostring(compileErr)
-                    })
-                })
-            else
-                local execSuccess, runtimeErr = xpcall(func, function(err)
-                    return debug.traceback(tostring(err))
-                end)
-
-                if execSuccess then
-                    print("[ScriptForge Execution Success] Script [" .. tostring(data.script_id) .. "] executed with 0 errors!")
-                    requestFunc({
-                        Url = SERVER_URL .. "/api/report_success",
-                        Method = "POST",
-                        Headers = {
-                            ["Content-Type"] = "application/json",
-                            ["X-Session-Key"] = SESSION_KEY
-                        },
-                        Body = HttpService:JSONEncode({
-                            session_key = SESSION_KEY,
-                            script_id = data.script_id,
-                            code = data.code
+            task.spawn(function()
+                local func, compileErr = loadstring(data.code)
+                if not func then
+                    print("[ScriptForge Compile Error]: " .. tostring(compileErr))
+                    pcall(function()
+                        requestFunc({
+                            Url = SERVER_URL .. "/api/report_error",
+                            Method = "POST",
+                            Headers = {
+                                ["Content-Type"] = "application/json",
+                                ["X-Session-Key"] = SESSION_KEY
+                            },
+                            Body = HttpService:JSONEncode({
+                                session_key = SESSION_KEY,
+                                script_id = data.script_id,
+                                failed_code = data.code,
+                                error_message = "Syntax/Compile Error: " .. tostring(compileErr)
+                            })
                         })
-                    })
+                    end)
                 else
-                    print("[ScriptForge Runtime Error]: " .. tostring(runtimeErr))
-                    requestFunc({
-                        Url = SERVER_URL .. "/api/report_error",
-                        Method = "POST",
-                        Headers = {
-                            ["Content-Type"] = "application/json",
-                            ["X-Session-Key"] = SESSION_KEY
-                        },
-                        Body = HttpService:JSONEncode({
-                            session_key = SESSION_KEY,
-                            script_id = data.script_id,
-                            failed_code = data.code,
-                            error_message = "Runtime Error: " .. tostring(runtimeErr)
-                        })
-                    })
+                    local execSuccess, runtimeErr = xpcall(func, function(err)
+                        return debug.traceback(tostring(err))
+                    end)
+
+                    if execSuccess then
+                        print("[ScriptForge Execution Success] Script [" .. tostring(data.script_id) .. "] executed with 0 errors!")
+                        pcall(function()
+                            requestFunc({
+                                Url = SERVER_URL .. "/api/report_success",
+                                Method = "POST",
+                                Headers = {
+                                    ["Content-Type"] = "application/json",
+                                    ["X-Session-Key"] = SESSION_KEY
+                                },
+                                Body = HttpService:JSONEncode({
+                                    session_key = SESSION_KEY,
+                                    script_id = data.script_id,
+                                    code = data.code
+                                })
+                            })
+                        end)
+                    else
+                        print("[ScriptForge Runtime Error]: " .. tostring(runtimeErr))
+                        pcall(function()
+                            requestFunc({
+                                Url = SERVER_URL .. "/api/report_error",
+                                Method = "POST",
+                                Headers = {
+                                    ["Content-Type"] = "application/json",
+                                    ["X-Session-Key"] = SESSION_KEY
+                                },
+                                Body = HttpService:JSONEncode({
+                                    session_key = SESSION_KEY,
+                                    script_id = data.script_id,
+                                    failed_code = data.code,
+                                    error_message = "Runtime Error: " .. tostring(runtimeErr)
+                                })
+                            })
+                        end)
+                    end
                 end
-            end
+            end)
         end
     end
 end

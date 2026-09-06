@@ -7,6 +7,7 @@ import hashlib
 import secrets
 import urllib.request
 import urllib.parse
+import threading
 from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 
@@ -1099,7 +1100,7 @@ HTML_TEMPLATE = r"""
 
         <div class="d-flex align-items-center gap-2">
             <!-- Exclusive Context Management Modal Button for User 'Ween' -->
-            <button class="btn btn-sm btn-theme-outline" id="weenContextBtn" onclick="openWeenContextModal()" style="display: none;" title="Manage Place Executor Script Contexts">
+            <button class="btn btn-sm btn-theme-outline d-inline-flex align-items-center justify-content-center" id="weenContextBtn" onclick="openWeenContextModal()" style="display: none;" title="Manage Place Executor Script Contexts">
                 <i class="fa-solid fa-book-bookmark me-1"></i> Script Contexts
             </button>
 
@@ -1693,7 +1694,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             if (loggedInUser) {
                 btn.innerHTML = `<i class="fa-solid fa-user-check me-1"></i> ${escapeHtml(loggedInUser)}`;
                 if (loggedInUser.toLowerCase() === "ween") {
-                    if (weenBtn) weenBtn.style.display = "inline-flex";
+                    if (weenBtn) weenBtn.style.setProperty("display", "inline-flex", "important");
                 } else {
                     if (weenBtn) weenBtn.style.display = "none";
                 }
@@ -2949,7 +2950,7 @@ def get_status():
     s_key = get_session_key(request)
     store = get_session_store(s_key)
     ctx = store["game_context"]
-    is_connected = ctx.get("last_seen") and (time.time() - ctx["last_seen"] < 25)
+    is_connected = ctx.get("last_seen") and (time.time() - ctx["last_seen"] < 35)
     ctx["connected"] = is_connected
     save_session_store(s_key, store)
     return jsonify(ctx)
@@ -3114,6 +3115,33 @@ def report_success():
 
     return jsonify({"status": "acknowledged"})
 
+def async_autofix_task(s_key, script_id, debug_prompt, selected_model, history, game_ctx, openrouter_key, ai_mode, use_context, attempts):
+    """Background worker that calls OpenRouter AI fix asynchronously without blocking executor HTTP connection."""
+    try:
+        reply, err = generate_ai_response(debug_prompt, selected_model, history, game_ctx, openrouter_key=openrouter_key, ai_mode=ai_mode, use_context=use_context)
+        store = get_session_store(s_key)
+        sess = store["script_sessions"].get(script_id)
+        if not sess:
+            return
+
+        if reply:
+            fixed_code = extract_luau_code(reply)
+            if fixed_code:
+                sess["logs"].append(f"Queued fixed script (Attempt {attempts}/3) for verification...")
+                sess["final_code"] = fixed_code
+                sess["original_reply"] = reply
+                sess["status"] = "verifying"
+                store["pending_scripts"].append({"id": script_id, "code": fixed_code})
+                save_session_store(s_key, store)
+                print(f"[AUTO-FIX SUCCESS] Session [{s_key}] Script [{script_id}] auto-fixed on attempt {attempts}/3!")
+                return
+
+        sess["status"] = "failed"
+        sess["logs"].append("AI auto-fix failed to produce a valid solution.")
+        save_session_store(s_key, store)
+    except Exception as e:
+        print(f"[AUTO-FIX ASYNC ERROR] {e}")
+
 @app.route("/api/report_error", methods=["POST"])
 def report_error():
     data = request.json or {}
@@ -3152,6 +3180,8 @@ def report_error():
         return jsonify({"status": "max_attempts_reached"}), 400
 
     sess["logs"].append(f"Auto-Fixing Error... (Attempt {attempts}/3)...")
+    sess["status"] = "auto_fixing"
+    save_session_store(s_key, store)
 
     debug_prompt = f"""
     The previous Luau script failed in the Roblox engine with the following error:
@@ -3172,22 +3202,13 @@ def report_error():
     ai_mode = sess.get("ai_mode") or "coding"
     use_context = sess.get("use_context", True)
 
-    reply, err = generate_ai_response(debug_prompt, selected_model, sess.get("history", []), store["game_context"], openrouter_key=openrouter_key, ai_mode=ai_mode, use_context=use_context)
+    threading.Thread(
+        target=async_autofix_task,
+        args=(s_key, script_id, debug_prompt, selected_model, sess.get("history", []), store["game_context"], openrouter_key, ai_mode, use_context, attempts),
+        daemon=True
+    ).start()
 
-    if reply:
-        fixed_code = extract_luau_code(reply)
-        if fixed_code:
-            sess["logs"].append(f"Queued fixed script (Attempt {attempts}/3) for verification...")
-            sess["final_code"] = fixed_code
-            sess["original_reply"] = reply
-            store["pending_scripts"].append({"id": script_id, "code": fixed_code})
-            save_session_store(s_key, store)
-            return jsonify({"status": "auto_fixed", "new_code": fixed_code, "attempt": attempts})
-
-    sess["status"] = "failed"
-    sess["logs"].append("AI auto-fix failed to produce a valid solution.")
-    save_session_store(s_key, store)
-    return jsonify({"error": "Auto-fix failed"}), 500
+    return jsonify({"status": "auto_fix_started", "attempt": attempts})
 
 @app.route("/api/get_autofix_logs", methods=["GET"])
 def get_autofix_logs():
