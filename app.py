@@ -31,34 +31,66 @@ game_name_cache = {}
 
 openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
 
+def kv_set(key, value_obj):
+    """Save any Python data structure reliably to Vercel KV / Upstash Redis via official REST API."""
+    global KV_URL, KV_TOKEN
+    if not (KV_URL and KV_TOKEN):
+        return False
+    try:
+        url = KV_URL.rstrip('/')
+        payload = json.dumps(["SET", key, json.dumps(value_obj)])
+        req = urllib.request.Request(
+            url,
+            data=payload.encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {KV_TOKEN}",
+                "Content-Type": "application/json"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            res = json.loads(resp.read().decode("utf-8"))
+            return res.get("result") == "OK"
+    except Exception as e:
+        print(f"[KV_SET ERROR] Key '{key}': {e}")
+        return False
+
+def kv_get(key):
+    """Fetch any Python data structure reliably from Vercel KV / Upstash Redis via official REST API."""
+    global KV_URL, KV_TOKEN
+    if not (KV_URL and KV_TOKEN):
+        return None
+    try:
+        url = f"{KV_URL.rstrip('/')}/get/{key}"
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {KV_TOKEN}"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            res = json.loads(resp.read().decode("utf-8"))
+            val = res.get("result")
+            if val is not None:
+                if isinstance(val, str):
+                    return json.loads(val)
+                return val
+    except Exception as e:
+        print(f"[KV_GET ERROR] Key '{key}': {e}")
+    return None
+
 def load_accounts():
     """Load user accounts safely from Vercel KV / Upstash Redis or local JSON database."""
     global accounts_in_memory
-
-    if KV_URL and KV_TOKEN:
-        try:
-            url = f"{KV_URL.rstrip('/')}/get/scriptforge_accounts"
-            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {KV_TOKEN}"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                res = json.loads(resp.read().decode("utf-8"))
-                val = res.get("result")
-                if val:
-                    accounts_in_memory = json.loads(val)
-                    return accounts_in_memory
-        except Exception as e:
-            print(f"[ACCOUNTS] Error reading Vercel KV: {e}")
-
-    if accounts_in_memory:
+    
+    kv_data = kv_get("scriptforge_accounts")
+    if kv_data and isinstance(kv_data, dict):
+        accounts_in_memory = kv_data
         return accounts_in_memory
 
     if os.path.exists(ACCOUNTS_FILE):
         try:
             with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                accounts_in_memory = data
-                return data
+                if isinstance(data, dict):
+                    accounts_in_memory = data
+                    return data
         except Exception as e:
-            print(f"[ACCOUNTS] Error loading accounts file: {e}")
+            print(f"[ACCOUNTS] Error loading local file: {e}")
 
     return accounts_in_memory
 
@@ -66,63 +98,33 @@ def save_accounts(accounts):
     """Save user accounts safely to Vercel KV / Upstash Redis and local JSON database."""
     global accounts_in_memory
     accounts_in_memory = accounts
-
-    if KV_URL and KV_TOKEN:
-        try:
-            url = f"{KV_URL.rstrip('/')}/set/scriptforge_accounts"
-            payload = json.dumps(accounts)
-            req = urllib.request.Request(
-                url,
-                data=payload.encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {KV_TOKEN}",
-                    "Content-Type": "application/json"
-                }
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                print(f"[ACCOUNTS] Saved accounts to Vercel KV!")
-        except Exception as e:
-            print(f"[ACCOUNTS] Error saving to Vercel KV: {e}")
+    
+    kv_set("scriptforge_accounts", accounts)
 
     try:
         with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
             json.dump(accounts, f, indent=2)
-            f.flush()
-            try:
-                os.fsync(f.fileno())
-            except Exception:
-                pass
-    except OSError as e:
-        print(f"[ACCOUNTS] Read-only filesystem warning: {e}")
-    except Exception as e:
-        print(f"[ACCOUNTS] Error saving local accounts file: {e}")
+    except Exception:
+        pass
 
 def load_context_scripts():
     """Load place ID script context references from Vercel KV or local JSON."""
     global context_scripts_in_memory
-    if KV_URL and KV_TOKEN:
-        try:
-            url = f"{KV_URL.rstrip('/')}/get/scriptforge_context_scripts"
-            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {KV_TOKEN}"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                res = json.loads(resp.read().decode("utf-8"))
-                val = res.get("result")
-                if val:
-                    context_scripts_in_memory = json.loads(val)
-                    return context_scripts_in_memory
-        except Exception as e:
-            print(f"[CONTEXT_SCRIPTS] Error reading Vercel KV: {e}")
-
-    if context_scripts_in_memory:
+    
+    kv_data = kv_get("scriptforge_context_scripts")
+    if kv_data and isinstance(kv_data, dict):
+        context_scripts_in_memory = kv_data
         return context_scripts_in_memory
 
     if os.path.exists(CONTEXT_SCRIPTS_FILE):
         try:
             with open(CONTEXT_SCRIPTS_FILE, "r", encoding="utf-8") as f:
-                context_scripts_in_memory = json.load(f)
-                return context_scripts_in_memory
+                data = json.load(f)
+                if isinstance(data, dict):
+                    context_scripts_in_memory = data
+                    return data
         except Exception as e:
-            print(f"[CONTEXT_SCRIPTS] Error reading file: {e}")
+            print(f"[CONTEXT_SCRIPTS] Error reading local file: {e}")
 
     return context_scripts_in_memory
 
@@ -130,47 +132,23 @@ def save_context_scripts(scripts_data):
     """Save place ID script context references to Vercel KV and local JSON."""
     global context_scripts_in_memory
     context_scripts_in_memory = scripts_data
-
-    if KV_URL and KV_TOKEN:
-        try:
-            url = f"{KV_URL.rstrip('/')}/set/scriptforge_context_scripts"
-            payload = json.dumps(scripts_data)
-            req = urllib.request.Request(
-                url,
-                data=payload.encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {KV_TOKEN}",
-                    "Content-Type": "application/json"
-                }
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                print(f"[CONTEXT_SCRIPTS] Saved to Vercel KV!")
-        except Exception as e:
-            print(f"[CONTEXT_SCRIPTS] Error saving to Vercel KV: {e}")
+    
+    kv_set("scriptforge_context_scripts", scripts_data)
 
     try:
         with open(CONTEXT_SCRIPTS_FILE, "w", encoding="utf-8") as f:
             json.dump(scripts_data, f, indent=2)
-    except Exception as e:
-        print(f"[CONTEXT_SCRIPTS] Error saving local file: {e}")
+    except Exception:
+        pass
 
 def get_session_store(key):
     """Get or initialize isolated session data for a given session_key across Vercel Lambdas."""
     global sessions_data
 
-    if KV_URL and KV_TOKEN:
-        try:
-            url = f"{KV_URL.rstrip('/')}/get/sf_sess_{key}"
-            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {KV_TOKEN}"})
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                res = json.loads(resp.read().decode("utf-8"))
-                val = res.get("result")
-                if val:
-                    data = json.loads(val)
-                    sessions_data[key] = data
-                    return data
-        except Exception as e:
-            print(f"[SESSION_KV] Error loading session KV: {e}")
+    kv_data = kv_get(f"sf_sess_{key}")
+    if kv_data and isinstance(kv_data, dict):
+        sessions_data[key] = kv_data
+        return kv_data
 
     if key not in sessions_data:
         sessions_data[key] = {
@@ -192,23 +170,7 @@ def save_session_store(key, store_data):
     """Save session data to memory and sync across Vercel serverless instances via KV."""
     global sessions_data
     sessions_data[key] = store_data
-
-    if KV_URL and KV_TOKEN:
-        try:
-            url = f"{KV_URL.rstrip('/')}/set/sf_sess_{key}"
-            payload = json.dumps(store_data)
-            req = urllib.request.Request(
-                url,
-                data=payload.encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {KV_TOKEN}",
-                    "Content-Type": "application/json"
-                }
-            )
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                pass
-        except Exception as e:
-            print(f"[SESSION_KV] Error saving session KV: {e}")
+    kv_set(f"sf_sess_{key}", store_data)
 
 @app.errorhandler(Exception)
 def handle_exception(e):
@@ -306,45 +268,56 @@ def call_openai_compatible(api_url, api_key, model_name, system_instruction, use
         return None, str(e)
 
 def clean_context_script(code):
-    """Sanitize reference executor scripts by removing webhooks, external Discord URLs, http requests, and non-essential noise."""
+    """Sanitize reference executor scripts by removing webhooks and IP loggers while preserving full Luau game logic."""
     if not code:
         return ""
     
-    # Strip Discord webhook URLs & generic webhooks
+    # Redact Discord webhook URLs specifically
     code = re.sub(r'https?://(?:canary\.|ptb\.)?discord(?:app)?\.com/api/webhooks/[^\s"\']+', '[REDACTED_WEBHOOK]', code, flags=re.IGNORECASE)
-    code = re.sub(r'https?://[^\s"\']+', '[REDACTED_URL]', code)
-
-    cleaned_lines = []
+    
+    lines = []
     for line in code.splitlines():
         l = line.strip().lower()
-        # Skip lines that deal with sending discord notifications, webhooks, or external tracking
-        if any(keyword in l for keyword in ['webhook', 'syn.request', 'http_request', 'httppost', 'request(', 'game:httpget', 'setclipboard']):
-            if 'discord' in l or 'webhook' in l or 'http' in l:
-                continue
-        cleaned_lines.append(line)
-    
-    return "\n".join(cleaned_lines).strip()
+        if ('webhook' in l or 'discord' in l) and any(k in l for k in ['http', 'request', 'post', 'api']):
+            continue
+        lines.append(line)
+        
+    return "\n".join(lines).strip()
 
-def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, openrouter_key="", ai_mode="coding", use_context=True):
+def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, openrouter_key="", ai_mode="coding", use_context=True, chat_place_id=0):
     """UNIFIED AI generation engine powering all models strictly through OpenRouter."""
     
     if use_context:
         all_ref_scripts = load_context_scripts()
-        p_id = str(game_ctx.get("place_id", "0")) if game_ctx else "0"
+        p_id = str(game_ctx.get("place_id") or chat_place_id or "0") if game_ctx else str(chat_place_id or "0")
         
         scripts_to_include = []
         # 1. Include Universal reference scripts (applies across ALL games)
-        if "universal" in all_ref_scripts:
-            scripts_to_include.extend(all_ref_scripts["universal"])
-        if "0" in all_ref_scripts and "universal" not in all_ref_scripts:
-            scripts_to_include.extend(all_ref_scripts["0"])
+        for u_key in ["universal", "Universal", "0"]:
+            if u_key in all_ref_scripts and isinstance(all_ref_scripts[u_key], list):
+                scripts_to_include.extend(all_ref_scripts[u_key])
 
-        # 2. Include Place-specific reference scripts
+        # 2. Include Place-specific reference scripts matching active game/chat place_id
         if p_id != "0" and p_id.lower() != "universal" and p_id in all_ref_scripts:
-            scripts_to_include.extend(all_ref_scripts[p_id])
+            if isinstance(all_ref_scripts[p_id], list):
+                scripts_to_include.extend(all_ref_scripts[p_id])
+        elif p_id == "0":
+            # Fallback: If executor is disconnected and chat has no place_id, include all saved context scripts as reference!
+            for k, v in all_ref_scripts.items():
+                if k not in ["universal", "Universal", "0"] and isinstance(v, list):
+                    scripts_to_include.extend(v)
 
         cleaned_refs = []
+        seen_ids = set()
         for item in scripts_to_include:
+            if not isinstance(item, dict):
+                continue
+            s_id = item.get("id")
+            if s_id and s_id in seen_ids:
+                continue
+            if s_id:
+                seen_ids.add(s_id)
+
             c_code = clean_context_script(item.get("code", ""))
             if c_code:
                 cleaned_refs.append({
@@ -1743,10 +1716,13 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     if (data.user.chats && data.user.chats.length > 0) {
                         chats = data.user.chats;
                         activeChatId = chats[0].id;
-                        saveChatsToStorage();
-                        renderChatList();
-                        renderActiveChat();
+                    } else {
+                        syncChatsToCloud();
                     }
+                    saveChatsToStorage();
+                    updateGameFilterDropdown();
+                    renderChatList();
+                    renderActiveChat();
                     updateAuthHeaderBtn();
                     bootstrap.Modal.getInstance(document.getElementById("authModal")).hide();
                     showToast(`Welcome back, ${loggedInUser}!`, "fa-solid fa-circle-check");
@@ -2481,6 +2457,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                         auto_execute: autoExecute,
                         auto_fix: autoFix,
                         use_context: useContext,
+                        place_id: chat ? chat.place_id : 0,
                         history: historyForApi
                     })
                 });
@@ -2865,9 +2842,10 @@ def chat():
     auto_execute = data.get("auto_execute", False)
     auto_fix = data.get("auto_fix", True)
     use_context = data.get("use_context", True)
+    chat_place_id = data.get("place_id", 0)
     history = data.get("history", [])
 
-    reply, err = generate_ai_response(prompt, selected_model, history, store["game_context"], openrouter_key=openrouter_key, ai_mode=ai_mode, use_context=use_context)
+    reply, err = generate_ai_response(prompt, selected_model, history, store["game_context"], openrouter_key=openrouter_key, ai_mode=ai_mode, use_context=use_context, chat_place_id=chat_place_id)
     
     if err:
         return jsonify({"error": f"AI Generation Error: {err}"}), 500
