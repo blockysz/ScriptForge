@@ -18,9 +18,12 @@ if hasattr(sys.stderr, 'reconfigure'):
 app = Flask(__name__)
 CORS(app)
 
-# Persistent Local & Cloud Storage Setup
+# Persistent Local, /tmp, & Cloud Storage Setup
 ACCOUNTS_FILE = os.path.join(os.path.dirname(__file__), "accounts.json")
+TMP_ACCOUNTS_FILE = os.path.join("/tmp", "accounts.json")
 CONTEXT_SCRIPTS_FILE = os.path.join(os.path.dirname(__file__), "context_scripts.json")
+TMP_CONTEXT_SCRIPTS_FILE = os.path.join("/tmp", "context_scripts.json")
+
 KV_URL = os.getenv("KV_REST_API_URL") or os.getenv("UPSTASH_REDIS_REST_URL")
 KV_TOKEN = os.getenv("KV_REST_API_TOKEN") or os.getenv("UPSTASH_REDIS_REST_TOKEN")
 
@@ -74,14 +77,27 @@ def kv_get(key):
     return None
 
 def load_accounts():
-    """Load user accounts safely from Vercel KV / Upstash Redis or local JSON database."""
+    """Load user accounts safely from Vercel KV, /tmp, or local JSON database."""
     global accounts_in_memory
     
+    # 1. Try Vercel KV / Upstash Redis
     kv_data = kv_get("scriptforge_accounts")
     if kv_data and isinstance(kv_data, dict):
         accounts_in_memory = kv_data
         return accounts_in_memory
 
+    # 2. Try /tmp persistent serverless storage
+    if os.path.exists(TMP_ACCOUNTS_FILE):
+        try:
+            with open(TMP_ACCOUNTS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict) and data:
+                    accounts_in_memory = data
+                    return data
+        except Exception:
+            pass
+
+    # 3. Try local repo accounts.json file
     if os.path.exists(ACCOUNTS_FILE):
         try:
             with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
@@ -95,12 +111,21 @@ def load_accounts():
     return accounts_in_memory
 
 def save_accounts(accounts):
-    """Save user accounts safely to Vercel KV / Upstash Redis and local JSON database."""
+    """Save user accounts safely to Vercel KV, /tmp, and local JSON database."""
     global accounts_in_memory
     accounts_in_memory = accounts
     
+    # 1. Save to Cloud KV
     kv_set("scriptforge_accounts", accounts)
 
+    # 2. Save to /tmp persistent serverless storage
+    try:
+        with open(TMP_ACCOUNTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(accounts, f, indent=2)
+    except Exception:
+        pass
+
+    # 3. Save to local repo accounts.json
     try:
         with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
             json.dump(accounts, f, indent=2)
@@ -108,14 +133,27 @@ def save_accounts(accounts):
         pass
 
 def load_context_scripts():
-    """Load place ID script context references from Vercel KV or local JSON."""
+    """Load place ID script context references from Vercel KV, /tmp, or local JSON."""
     global context_scripts_in_memory
     
+    # 1. Try Vercel KV / Upstash Redis
     kv_data = kv_get("scriptforge_context_scripts")
     if kv_data and isinstance(kv_data, dict):
         context_scripts_in_memory = kv_data
         return context_scripts_in_memory
 
+    # 2. Try /tmp persistent serverless storage
+    if os.path.exists(TMP_CONTEXT_SCRIPTS_FILE):
+        try:
+            with open(TMP_CONTEXT_SCRIPTS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict) and data:
+                    context_scripts_in_memory = data
+                    return data
+        except Exception:
+            pass
+
+    # 3. Try local repo context_scripts.json
     if os.path.exists(CONTEXT_SCRIPTS_FILE):
         try:
             with open(CONTEXT_SCRIPTS_FILE, "r", encoding="utf-8") as f:
@@ -129,12 +167,21 @@ def load_context_scripts():
     return context_scripts_in_memory
 
 def save_context_scripts(scripts_data):
-    """Save place ID script context references to Vercel KV and local JSON."""
+    """Save place ID script context references to Vercel KV, /tmp, and local JSON."""
     global context_scripts_in_memory
     context_scripts_in_memory = scripts_data
     
+    # 1. Save to Cloud KV
     kv_set("scriptforge_context_scripts", scripts_data)
 
+    # 2. Save to /tmp persistent serverless storage
+    try:
+        with open(TMP_CONTEXT_SCRIPTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(scripts_data, f, indent=2)
+    except Exception:
+        pass
+
+    # 3. Save to local repo file
     try:
         with open(CONTEXT_SCRIPTS_FILE, "w", encoding="utf-8") as f:
             json.dump(scripts_data, f, indent=2)
@@ -1698,13 +1745,39 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             }
 
             try {
-                const res = await fetch('/api/auth/login', {
+                let res = await fetch('/api/auth/login', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ username: user, password: pass })
                 });
 
-                const data = await res.json();
+                let data = await res.json();
+                
+                // Client auto-restore if serverless container memory reset
+                if (data.error && data.error.includes("does not exist")) {
+                    const localBackupKey = "SCRIPTFORGE_ACCOUNT_BACKUP_" + user.toLowerCase();
+                    const rawBackup = localStorage.getItem(localBackupKey);
+                    if (rawBackup) {
+                        try {
+                            const accountObj = JSON.parse(rawBackup);
+                            await fetch('/api/auth/client_restore', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ account: accountObj })
+                            });
+                            // Retry login
+                            res = await fetch('/api/auth/login', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ username: user, password: pass })
+                            });
+                            data = await res.json();
+                        } catch(errRes) {
+                            console.error("Auto restore login failed:", errRes);
+                        }
+                    }
+                }
+
                 if (data.error) {
                     showToast(data.error, "fa-solid fa-circle-exclamation");
                 } else {
@@ -1726,6 +1799,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     updateAuthHeaderBtn();
                     bootstrap.Modal.getInstance(document.getElementById("authModal")).hide();
                     showToast(`Welcome back, ${loggedInUser}!`, "fa-solid fa-circle-check");
+                    ensureContextBackupSynced();
                 }
             } catch(e) {
                 showToast("Connection error: " + e.message, "fa-solid fa-circle-exclamation");
@@ -1753,10 +1827,16 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 } else {
                     loggedInUser = data.user.username;
                     localStorage.setItem("SCRIPTFORGE_USER", loggedInUser);
+                    
+                    if (data.account_raw) {
+                        localStorage.setItem("SCRIPTFORGE_ACCOUNT_BACKUP_" + loggedInUser.toLowerCase(), JSON.stringify(data.account_raw));
+                    }
+                    
                     updateAuthHeaderBtn();
                     bootstrap.Modal.getInstance(document.getElementById("authModal")).hide();
                     showToast(`Account created! Welcome ${loggedInUser}`, "fa-solid fa-circle-check");
                     syncChatsToCloud();
+                    ensureContextBackupSynced();
                 }
             } catch(e) {
                 showToast("Connection error: " + e.message, "fa-solid fa-circle-exclamation");
@@ -1785,6 +1865,21 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 });
             } catch(e) {
                 console.error("Cloud sync error:", e);
+            }
+        }
+
+        async function ensureContextBackupSynced() {
+            const raw = localStorage.getItem("SCRIPTFORGE_CONTEXT_BACKUP");
+            if (!raw) return;
+            try {
+                const scripts = JSON.parse(raw);
+                await fetch('/api/context_scripts/restore', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ scripts: scripts })
+                });
+            } catch(e) {
+                console.error("Context sync error:", e);
             }
         }
 
@@ -1845,6 +1940,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         async function openWeenContextModal() {
             if (!loggedInUser || loggedInUser.toLowerCase() !== "ween") return;
             resetWeenForm();
+            await ensureContextBackupSynced();
             await renderWeenContextScriptsList();
             const modal = new bootstrap.Modal(document.getElementById("weenContextModal"));
             modal.show();
@@ -1864,7 +1960,17 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
             try {
                 const res = await fetch("/api/context_scripts");
-                const data = await res.json();
+                let data = await res.json();
+                
+                if (Object.keys(data).length === 0) {
+                    await ensureContextBackupSynced();
+                    const resRetry = await fetch("/api/context_scripts");
+                    data = await resRetry.json();
+                }
+
+                if (Object.keys(data).length > 0) {
+                    localStorage.setItem("SCRIPTFORGE_CONTEXT_BACKUP", JSON.stringify(data));
+                }
                 
                 container.innerHTML = "";
                 const placeIds = Object.keys(data);
@@ -2443,6 +2549,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             container.scrollTop = container.scrollHeight;
 
             try {
+                await ensureContextBackupSynced();
                 const historyForApi = chat.messages.slice(0, -1);
 
                 const res = await fetch('/api/chat', {
@@ -2597,6 +2704,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
         updateGameFilterDropdown();
         renderChatList();
         renderActiveChat();
+        ensureContextBackupSynced();
     </script>
 </body>
 </html>
@@ -2605,6 +2713,69 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 @app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
+
+# Storage Debug & Diagnostic Endpoint
+@app.route("/api/storage_status", methods=["GET"])
+def storage_status_route():
+    accs = load_accounts()
+    ctxs = load_context_scripts()
+    return jsonify({
+        "kv_configured": bool(KV_URL and KV_TOKEN),
+        "accounts_count": len(accs) if isinstance(accs, dict) else 0,
+        "context_scripts_count": sum(len(v) for v in ctxs.values()) if isinstance(ctxs, dict) else 0,
+        "accounts": list(accs.keys()) if isinstance(accs, dict) else []
+    })
+
+# Client Auto-Restore Protocol for Accounts
+@app.route("/api/auth/client_restore", methods=["POST"])
+def auth_client_restore():
+    data = request.json or {}
+    account = data.get("account") or {}
+    username = (account.get("username") or "").strip()
+    
+    if not username:
+        return jsonify({"error": "Invalid account data"}), 400
+
+    user_key = username.lower()
+    accounts = load_accounts()
+
+    if user_key not in accounts and account.get("password_hash") and account.get("salt"):
+        accounts[user_key] = account
+        save_accounts(accounts)
+        print(f"[CLIENT RESTORE] Restored account '{username}' from client backup!")
+
+    return jsonify({"status": "restored", "user": accounts.get(user_key)})
+
+# Client Auto-Restore Protocol for Context Scripts
+@app.route("/api/context_scripts/restore", methods=["POST"])
+def context_scripts_client_restore():
+    data = request.json or {}
+    scripts_backup = data.get("scripts") or {}
+
+    if not isinstance(scripts_backup, dict) or not scripts_backup:
+        return jsonify({"status": "empty"})
+
+    all_scripts = load_context_scripts()
+    updated = False
+
+    for place_id, scripts_list in scripts_backup.items():
+        if not isinstance(scripts_list, list):
+            continue
+        if place_id not in all_scripts:
+            all_scripts[place_id] = scripts_list
+            updated = True
+        else:
+            existing_ids = {s.get("id") for s in all_scripts[place_id] if isinstance(s, dict)}
+            for s in scripts_list:
+                if isinstance(s, dict) and s.get("id") not in existing_ids:
+                    all_scripts[place_id].append(s)
+                    updated = True
+
+    if updated:
+        save_context_scripts(all_scripts)
+        print(f"[CLIENT RESTORE] Restored context scripts from client backup!")
+
+    return jsonify({"status": "synced", "scripts": all_scripts})
 
 # Authentication Endpoints
 @app.route("/api/auth/register", methods=["POST"])
@@ -2629,7 +2800,7 @@ def auth_register():
     if not session_key:
         session_key = f"sf_live_{secrets.token_hex(16)}"
 
-    accounts[user_key] = {
+    raw_user_record = {
         "username": username,
         "password_hash": pwd_hash,
         "salt": salt,
@@ -2637,6 +2808,7 @@ def auth_register():
         "created_at": time.time(),
         "chats": []
     }
+    accounts[user_key] = raw_user_record
     save_accounts(accounts)
 
     return jsonify({
@@ -2645,7 +2817,8 @@ def auth_register():
             "username": username,
             "session_key": session_key,
             "chats": []
-        }
+        },
+        "account_raw": raw_user_record
     })
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -2673,7 +2846,8 @@ def auth_login():
             "username": user_data["username"],
             "session_key": user_data.get("session_key", f"sf_live_{secrets.token_hex(16)}"),
             "chats": user_data.get("chats", [])
-        }
+        },
+        "account_raw": user_data
     })
 
 @app.route("/api/auth/sync_chats", methods=["POST"])
