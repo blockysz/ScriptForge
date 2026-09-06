@@ -328,21 +328,32 @@ def clean_context_script(code):
 def generate_ai_response(user_prompt, selected_model, history=[], game_ctx={}, openrouter_key="", ai_mode="coding", use_context=True):
     """UNIFIED AI generation engine powering all models strictly through OpenRouter."""
     
-    if use_context and game_ctx and game_ctx.get("place_id"):
-        p_id = str(game_ctx.get("place_id"))
+    if use_context:
         all_ref_scripts = load_context_scripts()
-        if p_id in all_ref_scripts and all_ref_scripts[p_id]:
-            cleaned_refs = []
-            for item in all_ref_scripts[p_id]:
-                c_code = clean_context_script(item.get("code", ""))
-                if c_code:
-                    cleaned_refs.append({
-                        "title": item.get("title", "Reference Script"),
-                        "essential_code": c_code
-                    })
-            if cleaned_refs:
-                game_ctx = dict(game_ctx)
-                game_ctx["place_reference_executor_scripts"] = cleaned_refs
+        p_id = str(game_ctx.get("place_id", "0")) if game_ctx else "0"
+        
+        scripts_to_include = []
+        # 1. Include Universal reference scripts (applies across ALL games)
+        if "universal" in all_ref_scripts:
+            scripts_to_include.extend(all_ref_scripts["universal"])
+        if "0" in all_ref_scripts and "universal" not in all_ref_scripts:
+            scripts_to_include.extend(all_ref_scripts["0"])
+
+        # 2. Include Place-specific reference scripts
+        if p_id != "0" and p_id.lower() != "universal" and p_id in all_ref_scripts:
+            scripts_to_include.extend(all_ref_scripts[p_id])
+
+        cleaned_refs = []
+        for item in scripts_to_include:
+            c_code = clean_context_script(item.get("code", ""))
+            if c_code:
+                cleaned_refs.append({
+                    "title": item.get("title", "Reference Script"),
+                    "essential_code": c_code
+                })
+        if cleaned_refs:
+            game_ctx = dict(game_ctx or {})
+            game_ctx["place_reference_executor_scripts"] = cleaned_refs
 
     if ai_mode == "thinking":
         system_instruction = """
@@ -1215,8 +1226,8 @@ HTML_TEMPLATE = r"""
                         <input type="hidden" id="weenScriptId">
                         <div class="row g-2 mb-3">
                             <div class="col-md-4">
-                                <label class="form-label text-secondary" style="font-size: 0.8rem;">Place ID</label>
-                                <input type="number" id="weenPlaceIdInput" class="form-control theme-input border-secondary" placeholder="e.g. 185655149">
+                                <label class="form-label text-secondary" style="font-size: 0.8rem;">Place ID (or Universal)</label>
+                                <input type="text" id="weenPlaceIdInput" class="form-control theme-input border-secondary" placeholder="e.g. 185655149 or Universal">
                             </div>
                             <div class="col-md-8">
                                 <label class="form-label text-secondary" style="font-size: 0.8rem;">Script Title / Description</label>
@@ -1897,6 +1908,11 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     const card = document.createElement("div");
                     card.className = "p-3 theme-card rounded border border-secondary mb-3";
 
+                    const isUniversal = (pId.toLowerCase() === "universal" || pId === "0");
+                    const headerTitle = isUniversal
+                        ? `<i class="fa-solid fa-globe me-1 text-primary"></i> Universal (All Games)`
+                        : `<i class="fa-solid fa-gamepad me-1"></i> Place ID: <span class="font-monospace">${escapeHtml(pId)}</span>`;
+
                     let scriptsHtml = "";
                     scriptsList.forEach(s => {
                         scriptsHtml += `
@@ -1916,7 +1932,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                     card.innerHTML = `
                         <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom border-secondary">
                             <span class="fw-bold theme-text-main" style="font-size: 0.9rem;">
-                                <i class="fa-solid fa-gamepad me-1"></i> Place ID: <span class="font-monospace">${pId}</span>
+                                ${headerTitle}
                             </span>
                             <span class="badge theme-input text-secondary border border-secondary">${scriptsList.length} script(s)</span>
                         </div>
@@ -1932,12 +1948,12 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
 
         async function saveWeenContextScript() {
             const id = document.getElementById("weenScriptId").value;
-            const placeId = document.getElementById("weenPlaceIdInput").value.trim();
+            let placeId = document.getElementById("weenPlaceIdInput").value.trim();
             const title = document.getElementById("weenTitleInput").value.trim();
             const code = document.getElementById("weenCodeInput").value.trim();
 
-            if (!placeId || placeId === "0") {
-                showToast("Please enter a valid Place ID", "fa-solid fa-circle-exclamation");
+            if (!placeId) {
+                showToast("Please enter a Place ID or 'Universal'", "fa-solid fa-circle-exclamation");
                 return;
             }
             if (!code) {
@@ -2715,13 +2731,18 @@ def save_context_script_route():
     if username.lower() != "ween":
         return jsonify({"error": "Unauthorized. Only user 'Ween' can add or edit script contexts."}), 403
 
-    place_id = str(data.get("place_id", "0")).strip()
+    raw_pid = str(data.get("place_id", "0")).strip()
+    if raw_pid.lower() == "universal" or raw_pid == "0":
+        place_id = "universal"
+    else:
+        place_id = raw_pid
+
     title = (data.get("title") or "Executor Script").strip()
     code = (data.get("code") or "").strip()
     script_id = data.get("id") or f"ctx_{int(time.time()*1000)}"
 
-    if not place_id or place_id == "0":
-        return jsonify({"error": "Valid Place ID required"}), 400
+    if not place_id:
+        return jsonify({"error": "Valid Place ID or 'Universal' required"}), 400
     if not code:
         return jsonify({"error": "Script code required"}), 400
 
