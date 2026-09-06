@@ -1163,6 +1163,10 @@ HTML_TEMPLATE = r"""
                 <i class="fa-solid fa-plug me-1"></i> Connect Executor
             </button>
 
+            <button class="btn btn-sm btn-theme-outline" onclick="openStudioMcpModal()" title="Roblox Studio MCP Integration">
+                <i class="fa-solid fa-cubes me-1"></i> Studio MCP
+            </button>
+
             <div id="statusBadge" class="status-badge status-offline">
                 <span class="dot dot-offline"></span> Disconnected
             </div>
@@ -1462,6 +1466,54 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
                 </div>
                 <div class="modal-footer border-secondary">
                     <button type="button" class="btn btn-theme-primary px-4 py-2" onclick="copyExecutorScript()"><i class="fa-solid fa-copy me-1"></i> Copy Code</button>
+                    <button type="button" class="btn btn-theme-outline px-3 py-2" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Roblox Studio MCP Integration Modal -->
+    <div class="modal fade" id="studioMcpModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-secondary">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title theme-text-main"><i class="fa-solid fa-cubes me-2"></i> Roblox Studio MCP Integration</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p style="font-size: 0.88rem;" class="text-secondary">
+                        Connect <strong class="theme-text-main">Roblox Studio</strong> directly to ScriptForge using the official <strong class="theme-text-main">Model Context Protocol (MCP v2024-11-05)</strong>. Sync Studio Place IDs, scripts, RemoteEvents, and model context in real-time.
+                    </p>
+
+                    <div class="p-3 theme-card rounded border border-secondary mb-3" style="font-size: 0.82rem;">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="fw-bold theme-text-main"><i class="fa-solid fa-network-wired me-1"></i> MCP JSON-RPC 2.0 Endpoint:</span>
+                            <span class="font-monospace theme-text-main" id="mcpEndpointDisplay">-</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="fw-bold theme-text-main"><i class="fa-solid fa-file-code me-1"></i> Discovery Manifest:</span>
+                            <span class="font-monospace text-secondary" id="mcpManifestDisplay">-</span>
+                        </div>
+                    </div>
+
+                    <div class="code-container my-3">
+                        <div class="code-header">
+                            <span><i class="fa-solid fa-puzzle-piece me-1"></i> Roblox Studio MCP Integration Plugin</span>
+                            <div>
+                                <button class="btn btn-sm btn-theme-outline py-0 px-2" style="font-size: 0.78rem;" onclick="copyStudioMcpPluginScript()">
+                                    <i class="fa-solid fa-copy me-1"></i> Copy Plugin Script
+                                </button>
+                            </div>
+                        </div>
+                        <pre><code class="language-lua" id="studioMcpPluginCode">-- Loading Studio MCP Plugin code...</code></pre>
+                    </div>
+
+                    <div class="p-2 theme-card rounded border border-secondary text-secondary" style="font-size: 0.8rem;">
+                        <i class="fa-solid fa-shield-check me-1 text-success"></i> <strong>Data Protection Guarantee:</strong> Adding Roblox Studio MCP support strictly preserves all user accounts, session keys, and script contexts. No data is wiped.
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-theme-primary px-4 py-2" onclick="copyStudioMcpPluginScript()"><i class="fa-solid fa-copy me-1"></i> Copy Studio Plugin Code</button>
                     <button type="button" class="btn btn-theme-outline px-3 py-2" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
@@ -2291,6 +2343,34 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/blockysz/ScriptForge/
             const code = getFormattedExecutorScript();
             navigator.clipboard.writeText(code);
             showToast("Session Loadstring copied!", "fa-solid fa-copy");
+        }
+
+        function getStudioMcpPluginScript() {
+            const origin = window.location.origin.replace(/\/+$/, "");
+            const key = getSessionKey();
+            return `-- ScriptForge Roblox Studio MCP Integration Plugin\nlocal HttpService = game:GetService("HttpService")\nlocal ReplicatedStorage = game:GetService("ReplicatedStorage")\nlocal Workspace = game:GetService("Workspace")\n\nlocal SERVER_URL = "${origin}"\nlocal SESSION_KEY = "${key}"\n\nlocal function syncStudioToScriptForge()\n    pcall(function()\n        local remotes, items = {}, {}\n        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do\n            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then table.insert(remotes, obj:GetFullName()) end\n        end\n        for _, item in ipairs(Workspace:GetChildren()) do\n            if item:IsA("Model") or item:IsA("Part") or item:IsA("Folder") then table.insert(items, item.Name) end\n        end\n\n        local payload = {\n            session_key = SESSION_KEY,\n            place_id = game.PlaceId,\n            player_name = "Studio Developer",\n            connected = true,\n            remotes = remotes,\n            workspace_items = items\n        }\n        HttpService:PostAsync(SERVER_URL .. "/api/mcp/studio_sync", HttpService:JSONEncode(payload), Enum.HttpContentType.ApplicationJson, false)\n    end)\nend\n\ntask.spawn(function()\n    syncStudioToScriptForge()\n    while task.wait(15) do syncStudioToScriptForge() end\nend)`;
+        }
+
+        function openStudioMcpModal() {
+            const origin = window.location.origin.replace(/\/+$/, "");
+            const mcpEp = document.getElementById("mcpEndpointDisplay");
+            const mcpMan = document.getElementById("mcpManifestDisplay");
+            if (mcpEp) mcpEp.innerText = origin + "/api/mcp";
+            if (mcpMan) mcpMan.innerText = origin + "/api/mcp/manifest";
+
+            const codeEl = document.getElementById("studioMcpPluginCode");
+            if (codeEl) {
+                codeEl.innerText = getStudioMcpPluginScript();
+                hljs.highlightElement(codeEl);
+            }
+            const modal = new bootstrap.Modal(document.getElementById("studioMcpModal"));
+            modal.show();
+        }
+
+        function copyStudioMcpPluginScript() {
+            const code = getStudioMcpPluginScript();
+            navigator.clipboard.writeText(code);
+            showToast("Studio MCP Plugin Script copied!", "fa-solid fa-copy");
         }
 
         // Clean & Concise Welcome Message Matching Old Text Length Exactly
@@ -3432,6 +3512,329 @@ def get_pending_script():
         save_session_store(s_key, store)
         return jsonify({"has_script": True, "script_id": item["id"], "code": item["code"]})
     return jsonify({"has_script": False, "code": "", "script_id": ""})
+
+# ==============================================================================
+# MODEL CONTEXT PROTOCOL (MCP) FOR ROBLOX STUDIO INTEGRATION
+# Official JSON-RPC 2.0 Spec (v2024-11-05) + Studio Bridge Endpoints
+# ==============================================================================
+
+@app.route("/api/mcp/manifest", methods=["GET"])
+def mcp_manifest_route():
+    """Return JSON discovery manifest for ScriptForge Roblox Studio MCP server."""
+    base_url = request.host_url.rstrip('/')
+    return jsonify({
+        "schema_version": "v1",
+        "name": "ScriptForge Roblox Studio MCP",
+        "description": "Model Context Protocol (MCP) server connecting ScriptForge AI Studio with Roblox Studio & Executor client sessions.",
+        "protocol_version": "2024-11-05",
+        "endpoints": {
+            "mcp_jsonrpc": f"{base_url}/api/mcp",
+            "studio_sync": f"{base_url}/api/mcp/studio_sync",
+            "manifest": f"{base_url}/api/mcp/manifest"
+        },
+        "tools": [
+            {
+                "name": "roblox_studio_get_context",
+                "description": "Get current Roblox place ID, connected player session context, remotes list, leaderstats, and workspace items."
+            },
+            {
+                "name": "roblox_studio_list_place_contexts",
+                "description": "List saved Luau reference scripts and text note contexts for a specific Roblox Place ID or Universal scope."
+            },
+            {
+                "name": "roblox_studio_add_place_context",
+                "description": "Add or update a reference Luau script or text note context entry for a Roblox Place ID (or Universal)."
+            },
+            {
+                "name": "roblox_studio_execute_script",
+                "description": "Queue a Luau script for execution in the active Roblox player or Studio session."
+            },
+            {
+                "name": "roblox_studio_get_script_status",
+                "description": "Get current execution status, logs, or error reports for an executed Luau script."
+            },
+            {
+                "name": "roblox_studio_sync_data",
+                "description": "Sync Roblox Studio place scripts, models, and remote event definitions into ScriptForge session context."
+            }
+        ]
+    })
+
+@app.route("/api/mcp/studio_sync", methods=["POST"])
+def mcp_studio_sync_route():
+    """Direct HTTP bridge for Roblox Studio Plugin (HttpService) to push Studio context."""
+    data = request.json or {}
+    s_key = get_session_key(request)
+    store = get_session_store(s_key)
+
+    place_id = data.get("place_id") or 0
+    studio_scripts = data.get("scripts") or []
+    remotes = data.get("remotes") or []
+    workspace_items = data.get("workspace_items") or []
+
+    g_ctx = store["game_context"]
+    g_ctx["connected"] = True
+    g_ctx["last_seen"] = time.time()
+    g_ctx["place_id"] = place_id
+    g_ctx["player_name"] = data.get("player_name") or "Roblox Studio Developer"
+    g_ctx["studio_source"] = True
+    if remotes:
+        g_ctx["remotes"] = remotes
+    if workspace_items:
+        g_ctx["workspace_items"] = workspace_items
+    if studio_scripts:
+        g_ctx["studio_scripts"] = studio_scripts
+
+    save_session_store(s_key, store)
+    print(f"[ROBLOX STUDIO MCP] Synced Studio context for Place ID '{place_id}' (Remotes: {len(remotes)}, Scripts: {len(studio_scripts)})")
+    return jsonify({"status": "ok", "synced_remotes": len(remotes), "synced_scripts": len(studio_scripts)})
+
+@app.route("/api/mcp", methods=["POST"])
+def mcp_jsonrpc_endpoint():
+    """Official Model Context Protocol (MCP) JSON-RPC 2.0 Handler."""
+    req_json = request.json or {}
+    req_id = req_json.get("id")
+    method = req_json.get("method") or ""
+    params = req_json.get("params") or {}
+
+    s_key = get_session_key(request)
+
+    # 1. Lifecycle: initialize
+    if method == "initialize":
+        return jsonify({
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": { "listChanged": False },
+                    "resources": {}
+                },
+                "serverInfo": {
+                    "name": "ScriptForge Roblox Studio MCP Server",
+                    "version": "1.0.0"
+                }
+            }
+        })
+
+    # 2. Lifecycle: notifications/initialized or ping
+    if method in ["notifications/initialized", "ping"]:
+        return jsonify({ "jsonrpc": "2.0", "id": req_id, "result": {} })
+
+    # 3. Tools: tools/list
+    if method == "tools/list":
+        return jsonify({
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": {
+                "tools": [
+                    {
+                        "name": "roblox_studio_get_context",
+                        "description": "Fetch active Roblox session context (Place ID, player name, remotes list, leaderstats, workspace items).",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "session_key": { "type": "string", "description": "Optional session key" }
+                            }
+                        }
+                    },
+                    {
+                        "name": "roblox_studio_list_place_contexts",
+                        "description": "List saved reference Luau scripts and text notes for a given Place ID or Universal scope.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "place_id": { "type": "string", "description": "Roblox Place ID or 'Universal'" }
+                            }
+                        }
+                    },
+                    {
+                        "name": "roblox_studio_add_place_context",
+                        "description": "Save or update a reference script or text note context entry for a Roblox Place ID.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "username": { "type": "string", "description": "Username (must be 'Ween' for authorized edits)" },
+                                "place_id": { "type": "string", "description": "Place ID or 'Universal'" },
+                                "type": { "type": "string", "enum": ["script", "text"], "description": "Format type: 'script' or 'text'" },
+                                "title": { "type": "string", "description": "Title of the context entry" },
+                                "code": { "type": "string", "description": "Script code or text notes content" }
+                            },
+                            "required": ["username", "place_id", "code"]
+                        }
+                    },
+                    {
+                        "name": "roblox_studio_execute_script",
+                        "description": "Queue a Luau script for live execution in Roblox Studio or Roblox executor client.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "code": { "type": "string", "description": "Luau script code to run" }
+                            },
+                            "required": ["code"]
+                        }
+                    },
+                    {
+                        "name": "roblox_studio_get_script_status",
+                        "description": "Get runtime status, reply output, or error trace for an executed script.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "script_id": { "type": "string", "description": "The unique script ID returned when executing" }
+                            },
+                            "required": ["script_id"]
+                        }
+                    },
+                    {
+                        "name": "roblox_studio_sync_data",
+                        "description": "Push Roblox Studio place scripts, models, and remote event definitions into ScriptForge context.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "place_id": { "type": "integer", "description": "Roblox Studio Place ID" },
+                                "remotes": { "type": "array", "items": { "type": "string" }, "description": "List of RemoteEvent/RemoteFunction paths" },
+                                "workspace_items": { "type": "array", "items": { "type": "string" }, "description": "List of Workspace children" },
+                                "scripts": { "type": "array", "items": { "type": "object" }, "description": "List of Studio script objects" }
+                            }
+                        }
+                    }
+                ]
+            }
+        })
+
+    # 4. Tools: tools/call
+    if method == "tools/call":
+        tool_name = params.get("name") or ""
+        args = params.get("arguments") or {}
+        store = get_session_store(s_key)
+
+        if tool_name == "roblox_studio_get_context":
+            g_ctx = store["game_context"]
+            ref_scripts = load_context_scripts()
+            p_id = str(g_ctx.get("place_id", "0"))
+            res_data = {
+                "game_context": g_ctx,
+                "universal_contexts": ref_scripts.get("universal", []) or ref_scripts.get("Universal", []),
+                "place_specific_contexts": ref_scripts.get(p_id, [])
+            }
+            return jsonify({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": { "content": [{ "type": "text", "text": json.dumps(res_data, indent=2) }] }
+            })
+
+        elif tool_name == "roblox_studio_list_place_contexts":
+            p_id = str(args.get("place_id") or "universal").strip()
+            all_scripts = load_context_scripts()
+            res_data = all_scripts if p_id.lower() == "all" else { p_id: all_scripts.get(p_id, []) }
+            return jsonify({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": { "content": [{ "type": "text", "text": json.dumps(res_data, indent=2) }] }
+            })
+
+        elif tool_name == "roblox_studio_add_place_context":
+            username = (args.get("username") or "").strip()
+            if username.lower() != "ween":
+                return jsonify({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": { "code": -32001, "message": "Unauthorized. Only user 'Ween' can add context entries." }
+                })
+            place_id = str(args.get("place_id") or "universal").strip()
+            c_type = (args.get("type") or "script").strip().lower()
+            title = (args.get("title") or "MCP Reference Context").strip()
+            code = (args.get("code") or "").strip()
+
+            all_scripts = load_context_scripts()
+            if place_id not in all_scripts:
+                all_scripts[place_id] = []
+
+            s_id = f"ctx_mcp_{int(time.time()*1000)}"
+            new_item = { "id": s_id, "type": c_type, "title": title, "code": code, "updated_at": time.time() }
+            all_scripts[place_id].append(new_item)
+            save_context_scripts(all_scripts)
+
+            return jsonify({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": { "content": [{ "type": "text", "text": f"Successfully added context entry '{title}' for Place ID '{place_id}'!" }] }
+            })
+
+        elif tool_name == "roblox_studio_execute_script":
+            code = (args.get("code") or "").strip()
+            if not code:
+                return jsonify({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": { "code": -32602, "message": "Script code required" }
+                })
+            script_obj = {
+                "id": f"mcp_exec_{int(time.time()*1000)}",
+                "code": code,
+                "status": "pending",
+                "reply": "",
+                "error": False,
+                "created_at": time.time()
+            }
+            store["pending_scripts"].append(script_obj)
+            store["script_sessions"][script_obj["id"]] = script_obj
+            save_session_store(s_key, store)
+
+            return jsonify({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps({ "status": "queued", "script_id": script_obj["id"] })
+                    }]
+                }
+            })
+
+        elif tool_name == "roblox_studio_get_script_status":
+            s_id = args.get("script_id") or ""
+            script_data = store["script_sessions"].get(s_id)
+            if not script_data:
+                return jsonify({
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": { "code": -32602, "message": f"Script ID '{s_id}' not found" }
+                })
+            return jsonify({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": { "content": [{ "type": "text", "text": json.dumps(script_data, indent=2) }] }
+            })
+
+        elif tool_name == "roblox_studio_sync_data":
+            g_ctx = store["game_context"]
+            g_ctx["connected"] = True
+            g_ctx["last_seen"] = time.time()
+            if args.get("place_id"): g_ctx["place_id"] = args["place_id"]
+            if args.get("remotes"): g_ctx["remotes"] = args["remotes"]
+            if args.get("workspace_items"): g_ctx["workspace_items"] = args["workspace_items"]
+            if args.get("scripts"): g_ctx["studio_scripts"] = args["scripts"]
+            save_session_store(s_key, store)
+
+            return jsonify({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": { "content": [{ "type": "text", "text": "Roblox Studio data synced successfully to ScriptForge!" }] }
+            })
+
+        else:
+            return jsonify({
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": { "code": -32601, "message": f"Method or tool '{tool_name}' not found" }
+            })
+
+    return jsonify({
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "error": { "code": -32601, "message": f"Unknown JSON-RPC method '{method}'" }
+    })
 
 if __name__ == "__main__":
     print("="*60)
